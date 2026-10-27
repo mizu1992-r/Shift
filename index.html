@@ -99,6 +99,10 @@ main.app { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(
 .stage { position: relative; flex: 1; overflow: hidden; touch-action: none; cursor: crosshair; min-height: 240px; }
 .stage.panning { cursor: grabbing; }
 .layer { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
+.layer img:not([src]) { display: none; }
+.empty { cursor: pointer; }
+.empty .touch { display: none; }
+@media (hover: none) { .empty .mouse { display: none; } .empty .touch { display: block; } }
 .layer img { display: block; max-width: none; user-select: none; -webkit-user-drag: none; }
 .layer svg { position: absolute; left: 0; top: 0; overflow: visible; pointer-events: none; }
 .empty {
@@ -191,6 +195,13 @@ textarea { width: 100%; min-height: 96px; font-family: var(--font-num); resize: 
 }
 @media (hover: none) { .keys { display: none; } }
 .sync-ok { color: var(--shift); }
+.guide ol { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; }
+.guide summary { font-weight: 700; }
+.gcal { display: flex; flex-direction: column; gap: 4px; }
+.gcal a { display: flex; justify-content: space-between; gap: 8px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px; color: var(--ink); text-decoration: none; font-size: 13px; }
+.gcal a:hover { border-color: var(--accent); }
+.gcal a.done { opacity: .5; }
+.gcal a .go { color: var(--accent); font-weight: 700; white-space: nowrap; }
 .feed { display: flex; gap: 6px; }
 .feed input { flex: 1; min-width: 0; font-family: var(--font-num); font-size: 12px; }
 /* お給料 */
@@ -244,8 +255,10 @@ details summary { cursor: pointer; font-weight: 500; }
         <svg id="overlay" xmlns="http://www.w3.org/2000/svg"></svg>
       </div>
       <div class="empty" id="empty">
-        <strong>シフト表の写真をここにドロップ</strong>
-        <div>または「写真を開く」／ 画像をコピーして <kbd>Ctrl</kbd>+<kbd>V</kbd> で貼り付け</div>
+        <strong class="mouse">シフト表の写真をここにドロップ</strong>
+        <div class="mouse">またはここをクリックして写真を選ぶ ／ 画像をコピーして <kbd>Ctrl</kbd>+<kbd>V</kbd> で貼り付け</div>
+        <strong class="touch">ここをタップしてシフト表の写真を選ぶ</strong>
+        <div class="touch">写真ライブラリから選ぶか、その場で撮影できます</div>
       </div>
     </div>
     <div class="stepbar"><span class="badge" id="stepBadge">1</span><span id="stepText">シフト表の写真を開いてください。</span></div>
@@ -253,6 +266,16 @@ details summary { cursor: pointer; font-weight: 500; }
 
   <!-- ===== 右側パネル ===== -->
   <section class="panel">
+    <details class="card guide" id="guide">
+      <summary>はじめての方へ（使い方）</summary>
+      <ol class="small">
+        <li><b>シフト表の写真を開く</b>：「写真を開く」から、シフト表を撮った写真を選びます（その場で撮ってもOK）。</li>
+        <li><b>自分の列の四隅をタップ</b>：自分の名前の下の「出・退・休・実」の4マスを、1日の行から最終日の行まで囲むように四隅を押します。黄色いマス目が表と重なったら「読み取る」。</li>
+        <li><b>確認してカレンダーへ</b>：オレンジ色の「要確認」の日だけ写真と見比べて直したら、「書き出し」の「Googleカレンダーに1日ずつ追加」か「.ics を書き出す」でカレンダーに入れます。</li>
+      </ol>
+      <p class="small" style="margin:0">時給を入れるとお給料も計算できます。データはこのスマホの中だけに保存され、他の人には見えません。ホーム画面に追加して使うと、データが消えにくくなります（iPhone：共有ボタン →「ホーム画面に追加」）。</p>
+    </details>
+
     <div class="card reader">
       <h3>写真から読み取り</h3>
       <div class="status" id="rdStatus">写真を開き、自分の列（出・退・休・実の4マス）の四隅をクリックしてください。</div>
@@ -320,8 +343,14 @@ details summary { cursor: pointer; font-weight: 500; }
         <button class="primary" id="exportIcs">.ics を書き出す</button>
         <button id="exportCsv">CSV</button>
       </div>
+      <p class="small" style="margin:0">iPhone：書き出したファイルを開き「すべてを追加」を押すと、カレンダーに入ります。</p>
+      <details id="gcalBox">
+        <summary class="small"><b>Googleカレンダーに1日ずつ追加</b>（iPhone・Android どちらでも）</summary>
+        <p class="small" style="margin:6px 0">押すとGoogleカレンダーの予定作成画面が、日時が入った状態で開きます。「保存」を押したら、ここに戻って次の日へ。</p>
+        <div class="gcal" id="gcalList"></div>
+      </details>
       <details>
-        <summary class="small">Googleカレンダーへの取り込み方</summary>
+        <summary class="small">Googleカレンダーへの取り込み方（パソコン）</summary>
         <ol class="small" style="padding-left:18px;margin:6px 0 0">
           <li>パソコンで Googleカレンダーを開き、右上の歯車 →「設定」</li>
           <li>左の「インポート / エクスポート」→ 書き出した .ics ファイルを選択</li>
@@ -384,7 +413,14 @@ details summary { cursor: pointer; font-weight: 500; }
     </details>
 
     <div class="card" id="syncCard">
-      <h3>スマホ・パソコンで同期</h3>
+      <h3>スマホ・パソコンで同期（なくても使えます）</h3>
+      <div class="small">GitHubのアカウントがある人向けです。1台だけで使うなら設定は不要です。</div>
+      <div class="row">
+        <button id="backupSave">バックアップを保存</button>
+        <button id="backupLoad">バックアップから戻す</button>
+        <input id="backupFile" type="file" accept=".json,application/json" hidden>
+      </div>
+      <div class="small">機種変更のときは、古い端末で「バックアップを保存」→ 新しい端末で「バックアップから戻す」。</div>
       <div class="status" id="syncStatus">まだ設定されていません。下の「同期の設定」から始めてください。</div>
       <div id="syncFeed" hidden>
         <div class="small"><b>カレンダー購読URL</b>：これをカレンダーに登録すると、シフトを直すたびに自動で反映されます（.ics の取り込み直しは不要）。</div>
@@ -1006,6 +1042,32 @@ function renderActList(ent) {
   foot.innerHTML = `<td><b>合計</b></td><td class="num">${fmtHours(pm)}h</td><td class="num">${ad ? fmtHours(am) + "h（" + ad + "日）" : "−"}</td><td></td>`;
   t.appendChild(foot);
 }
+function gcalStamp(y, m, d, hhmm, add) { return utcStamp(y, m, d, hhmm, add); }
+function renderGcal(ent) {
+  const box = $("gcalList"); if (!box) return;
+  box.innerHTML = "";
+  if (!ent.length) { box.innerHTML = '<div class="small">この月のシフトはまだありません。</div>'; return; }
+  const done = new Set(gcalDone);
+  for (const [k, s] of ent) {
+    const { y, m, d } = parseKey(k);
+    const p = new URLSearchParams({
+      action: "TEMPLATE",
+      text: state.title || "バイト",
+      dates: `${gcalStamp(y, m, d, s.start, 0)}/${gcalStamp(y, m, d, s.end, overnight(s) ? 1 : 0)}`,
+      details: `${s.start}〜${s.end}${s.brk ? `（休憩${s.brk}分）` : ""}`,
+      ctz: "Asia/Tokyo",
+    });
+    if (state.location) p.set("location", state.location);
+    const a = document.createElement("a");
+    a.href = "https://calendar.google.com/calendar/render?" + p.toString().replace("%2F", "/");
+    a.target = "_blank"; a.rel = "noopener";
+    if (done.has(k + s.start + s.end)) a.className = "done";
+    a.innerHTML = `<span class="num">${m}/${d}（${WD[new Date(y, m - 1, d).getDay()]}） ${s.start}〜${s.end}</span><span class="go">${done.has(k + s.start + s.end) ? "追加済み？" : "追加 ›"}</span>`;
+    a.addEventListener("click", () => { gcalDone.push(k + s.start + s.end); setTimeout(render, 300); });
+    box.appendChild(a);
+  }
+}
+const gcalDone = [];
 function renderPay() {
   const { year: y, month: m } = state;
   $("payTitle").textContent = `${m}月のお給料（額面）`;
@@ -1115,6 +1177,7 @@ function render() {
   }
   renderPay();
   renderActList(ent);
+  renderGcal(ent);
   $("rdTarget").textContent = `対象：${y}年${m}月（${daysInMonth(y, m)}行）※月はカレンダーの ◀ ▶ で切り替え`;
   renderEditor();
   renderPresets();
@@ -1299,6 +1362,26 @@ $("exportIcs").onclick = () => {
   download(name, buildIcs(ent, state), "text/calendar;charset=utf-8");
   toast(`${ent.length}件を ${name} に書き出しました` + (warns ? `（要確認が${warns}日残っています）` : ""));
 };
+$("backupSave").onclick = () => {
+  const t = new Date();
+  download(`shiftcalendar_backup_${t.getFullYear()}${pad(t.getMonth() + 1)}${pad(t.getDate())}.json`, JSON.stringify(payload(), null, 1), "application/json");
+  toast("バックアップを保存しました");
+};
+$("backupLoad").onclick = () => $("backupFile").click();
+$("backupFile").onchange = async e => {
+  const f = e.target.files[0]; e.target.value = "";
+  if (!f) return;
+  try {
+    const data = JSON.parse(await f.text());
+    if (!data || typeof data.shifts !== "object") throw new Error("形式が違います");
+    state.shifts = data.shifts;
+    if (data.settings) SETTING_KEYS.forEach(k => { if (k in data.settings) state[k] = data.settings[k]; });
+    save(); render();
+    $("wage").value = state.wage || ""; $("fare").value = state.fare || ""; $("nightRate").checked = state.nightRate !== false;
+    $("evTitle").value = state.title; $("evLoc").value = state.location; $("evAlarm").value = state.alarm;
+    toast(`バックアップから ${Object.keys(state.shifts).length}日分を戻しました`, true);
+  } catch (err) { toast("このファイルは読み込めませんでした。ShiftCalendarのバックアップか確認してください"); }
+};
 $("exportCsv").onclick = () => {
   const ent = exportEntries();
   if (!ent.length) { toast("書き出すシフトがありません"); return; }
@@ -1453,6 +1536,7 @@ function rememberQuad() {
 }
 
 $("openBtn").onclick = () => $("fileInput").click();
+$("empty").addEventListener("click", () => $("fileInput").click());
 $("fileInput").onchange = e => { loadImageFile(e.target.files[0]); e.target.value = ""; };
 stage.addEventListener("dragover", e => { e.preventDefault(); stage.classList.add("drag"); });
 stage.addEventListener("dragleave", () => stage.classList.remove("drag"));
@@ -1807,6 +1891,7 @@ $("nightRate").checked = state.nightRate !== false;
 render();
 setStep();
 renderSync();
+if (!Object.keys(state.shifts).length) $("guide").open = true;
 if (state.sync.token) syncNow();
 </script>
 </body>
