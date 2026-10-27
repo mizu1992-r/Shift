@@ -201,6 +201,8 @@ textarea { width: 100%; min-height: 96px; font-family: var(--font-num); resize: 
 .payrow .small { flex: 1; min-width: 0; }
 .diff-plus { color: var(--shift); } .diff-minus { color: var(--sun); }
 .actual { border-top: 1px dashed var(--line); padding-top: 10px; display: flex; flex-direction: column; gap: 8px; }
+#actList td { white-space: nowrap; padding: 6px 4px; font-size: 12.5px; }
+#actCard .actual { border-top: 0; padding-top: 0; }
 .day .ok { font-size: 10px; color: var(--shift); font-weight: 700; }
 .day .todo { font-size: 9px; color: var(--muted); }
 .toast {
@@ -208,7 +210,9 @@ textarea { width: 100%; min-height: 96px; font-family: var(--font-num); resize: 
   background: var(--ink); color: var(--surface); padding: 8px 16px; border-radius: 8px; font-size: 13px;
   opacity: 0; transition: opacity .2s; pointer-events: none; max-width: calc(100% - 32px);
 }
-.toast.show { opacity: 1; }
+.toast.show { opacity: 1; pointer-events: auto; }
+.toast { display: flex; align-items: center; gap: 12px; }
+.toast button { background: transparent; border: 1px solid currentColor; color: inherit; font-weight: 700; padding: 4px 10px; white-space: nowrap; }
 @media (prefers-reduced-motion: reduce) { .toast { transition: none; } .status.busy::before { animation: none; } }
 details summary { cursor: pointer; font-weight: 500; }
 </style>
@@ -273,28 +277,8 @@ details summary { cursor: pointer; font-weight: 500; }
 
     <div class="cal" id="cal"></div>
 
-    <div class="card pay">
-      <h3 id="payTitle">この月のお給料</h3>
-      <div id="payNoWage" class="small">時給を入れると、見込み額と実際の額を計算します。</div>
-      <div id="payBody">
-        <div class="payrow main"><span class="small">今月の着地予想<br>（働いた日は実績、これからの日は予定で計算）</span><b id="payMix"></b></div>
-        <div class="payrow"><span class="small">見込み（予定どおり全部働いた場合）</span><b id="payPlan"></b></div>
-        <div class="payrow"><span class="small" id="payActLabel">実績（入力済みの日だけ）</span><b id="payAct"></b></div>
-        <div class="small" id="payDetail"></div>
-      </div>
-      <div class="row"><button id="fillActual">今日より前の未入力の日を「予定どおり」で実績入力</button></div>
-      <details id="paySettings">
-        <summary class="small">時給・交通費の設定</summary>
-        <div class="grid2" style="margin-top:8px">
-          <label for="wage">時給</label><div class="row"><input id="wage" type="number" min="0" step="10" style="width:100px" class="num"> <span class="small">円</span></div>
-          <label for="nightRate">深夜手当</label><label class="row small"><input id="nightRate" type="checkbox"> 22時〜翌5時は25%増し</label>
-          <label for="fare">交通費</label><div class="row"><input id="fare" type="number" min="0" step="10" style="width:100px" class="num"> <span class="small">円 / 1日（往復）</span></div>
-        </div>
-        <p class="small" style="margin:6px 0 0">税金や社会保険を引く前の金額（額面）です。1分単位で計算しています。お店が15分単位などで切り捨てている場合は、実際の振込額と少しずれます。</p>
-      </details>
-    </div>
-
     <div class="card">
+      <h3>シフト調整</h3>
       <div class="editor-date" id="edDate"></div>
       <div class="small"><b>予定</b>（シフト）</div>
       <div class="row">
@@ -307,8 +291,69 @@ details summary { cursor: pointer; font-weight: 500; }
       <div class="row">
         <button class="primary" id="edSave">登録</button>
         <button id="edDel">消す</button>
+        <button id="undoBtn" disabled title="Ctrl+Z">↶ 元に戻す</button>
       </div>
       <div class="small" id="edNote"></div>
+      <div class="presets" id="presets"></div>
+      <div class="row"><button id="addPreset">＋ 入力中の時間をよく使う時間に追加</button></div>
+      <div class="keys">
+        日付を選んで <kbd>1</kbd>〜<kbd>9</kbd>：よく使う時間を登録して次の日へ ／
+        <kbd>Space</kbd>：休み ／ <kbd>Delete</kbd>：消す ／ <kbd>←</kbd><kbd>→</kbd><kbd>↑</kbd><kbd>↓</kbd>：日付移動 ／ <kbd>Enter</kbd>：時刻を入力
+      </div>
+    </div>
+
+    <div class="card">
+      <h3>シフト一覧</h3>
+      <table class="list" id="list"></table>
+    </div>
+
+    <div class="card">
+      <h3>書き出し</h3>
+      <div class="grid2">
+        <label for="evTitle">予定名</label><input id="evTitle" type="text">
+        <label for="evLoc">場所</label><input id="evLoc" type="text" placeholder="（任意）">
+        <label for="evAlarm">通知</label>
+        <div class="row"><input id="evAlarm" type="number" min="0" step="5" style="width:80px"> <span class="small">分前（0でなし）</span></div>
+      </div>
+      <label class="row small"><input type="checkbox" id="onlyMonth" checked> 表示中の月だけ書き出す</label>
+      <div class="row">
+        <button class="primary" id="exportIcs">.ics を書き出す</button>
+        <button id="exportCsv">CSV</button>
+      </div>
+      <details>
+        <summary class="small">Googleカレンダーへの取り込み方</summary>
+        <ol class="small" style="padding-left:18px;margin:6px 0 0">
+          <li>パソコンで Googleカレンダーを開き、右上の歯車 →「設定」</li>
+          <li>左の「インポート / エクスポート」→ 書き出した .ics ファイルを選択</li>
+          <li>追加先のカレンダーを選んで「インポート」</li>
+        </ol>
+        <p class="small" style="margin:6px 0 0">「バイト」専用のカレンダーを作って取り込むと、間違えたときにカレンダーごと消してやり直せます。</p>
+      </details>
+    </div>
+
+    <div class="card pay">
+      <h3 id="payTitle">この月のお給料</h3>
+      <div id="payNoWage" class="small">時給を入れると、見込み額と実際の額を計算します。</div>
+      <div id="payBody">
+        <div class="payrow main"><span class="small">今月の着地予想<br>（働いた日は実績、これからの日は予定で計算）</span><b id="payMix"></b></div>
+        <div class="payrow"><span class="small">見込み（予定どおり全部働いた場合）</span><b id="payPlan"></b></div>
+        <div class="payrow"><span class="small" id="payActLabel">実績（入力済みの日だけ）</span><b id="payAct"></b></div>
+        <div class="small" id="payDetail"></div>
+      </div>
+      <details id="paySettings">
+        <summary class="small">時給・交通費の設定</summary>
+        <div class="grid2" style="margin-top:8px">
+          <label for="wage">時給</label><div class="row"><input id="wage" type="number" min="0" step="10" style="width:100px" class="num"> <span class="small">円</span></div>
+          <label for="nightRate">深夜手当</label><label class="row small"><input id="nightRate" type="checkbox"> 22時〜翌5時は25%増し</label>
+          <label for="fare">交通費</label><div class="row"><input id="fare" type="number" min="0" step="10" style="width:100px" class="num"> <span class="small">円 / 1日（往復）</span></div>
+        </div>
+        <p class="small" style="margin:6px 0 0">税金や社会保険を引く前の金額（額面）です。1分単位で計算しています。お店が15分単位などで切り捨てている場合は、実際の振込額と少しずれます。</p>
+      </details>
+    </div>
+
+    <div class="card" id="actCard">
+      <h3>実績</h3>
+      <div class="editor-date" id="actDate"></div>
       <div class="actual" id="actBox">
         <div class="small"><b>実際に働いた時間</b>（後日入力。早上がり・残業があったとき用）</div>
         <div class="row">
@@ -325,12 +370,10 @@ details summary { cursor: pointer; font-weight: 500; }
         </div>
         <div class="small" id="actNote"></div>
       </div>
-      <div class="presets" id="presets"></div>
-      <div class="row"><button id="addPreset">＋ 入力中の時間をよく使う時間に追加</button></div>
-      <div class="keys">
-        日付を選んで <kbd>1</kbd>〜<kbd>9</kbd>：よく使う時間を登録して次の日へ ／
-        <kbd>Space</kbd>：休み ／ <kbd>Delete</kbd>：消す ／ <kbd>←</kbd><kbd>→</kbd><kbd>↑</kbd><kbd>↓</kbd>：日付移動 ／ <kbd>Enter</kbd>：時刻を入力
-      </div>
+      <div class="small" id="actNone" hidden>この日はシフトが入っていません。実績を入れるには、先に「シフト調整」で時間を登録してください。</div>
+      <div class="row"><button id="fillActual">今日より前の未入力の日を「予定どおり」で実績入力</button></div>
+      <div class="small"><b>実績一覧</b></div>
+      <div style="overflow-x:auto"><table class="list" id="actList"></table></div>
     </div>
 
     <details class="card">
@@ -382,35 +425,6 @@ details summary { cursor: pointer; font-weight: 500; }
         </ol>
         <p class="small" style="margin:6px 0 0">データはあなたのGitHubの非公開Gist（URLを知っている人だけが見られるメモ）に保存されます。トークンはこの端末のブラウザにだけ保存され、他の人には送られません。トークンは人に見せないでください。</p>
       </details>
-    </div>
-
-    <div class="card">
-      <h3>書き出し</h3>
-      <div class="grid2">
-        <label for="evTitle">予定名</label><input id="evTitle" type="text">
-        <label for="evLoc">場所</label><input id="evLoc" type="text" placeholder="（任意）">
-        <label for="evAlarm">通知</label>
-        <div class="row"><input id="evAlarm" type="number" min="0" step="5" style="width:80px"> <span class="small">分前（0でなし）</span></div>
-      </div>
-      <label class="row small"><input type="checkbox" id="onlyMonth" checked> 表示中の月だけ書き出す</label>
-      <div class="row">
-        <button class="primary" id="exportIcs">.ics を書き出す</button>
-        <button id="exportCsv">CSV</button>
-      </div>
-      <details>
-        <summary class="small">Googleカレンダーへの取り込み方</summary>
-        <ol class="small" style="padding-left:18px;margin:6px 0 0">
-          <li>パソコンで Googleカレンダーを開き、右上の歯車 →「設定」</li>
-          <li>左の「インポート / エクスポート」→ 書き出した .ics ファイルを選択</li>
-          <li>追加先のカレンダーを選んで「インポート」</li>
-        </ol>
-        <p class="small" style="margin:6px 0 0">「バイト」専用のカレンダーを作って取り込むと、間違えたときにカレンダーごと消してやり直せます。</p>
-      </details>
-    </div>
-
-    <div class="card">
-      <h3>この月のシフト一覧</h3>
-      <table class="list" id="list"></table>
     </div>
   </section>
 </main>
@@ -838,6 +852,7 @@ function load() {
   state.tomb = state.tomb || {};
   state.sync = state.sync || {};
   lastSnap = makeSnap();
+  prevShifts = JSON.parse(JSON.stringify(state.shifts));
   const n = new Date(today.getFullYear(), today.getMonth() + 1, 1);   // シフト表はふつう翌月分
   state.year = n.getFullYear(); state.month = n.getMonth() + 1;
   state.selected = key(state.year, state.month, 1);
@@ -845,7 +860,28 @@ function load() {
 function persist() {
   try { const { selected, ...rest } = state; localStorage.setItem(STORE_KEY, JSON.stringify(rest)); } catch (e) {}
 }
-function save() { stamp(); persist(); scheduleSync(); }
+function save() { recordUndo(); stamp(); persist(); scheduleSync(); }
+
+// ---- 元に戻す：シフトが変わるたびに、変わる前の状態を最大30回分おぼえておく ----
+const undoStack = [];
+let prevShifts = null;
+const shiftsSig = sh => JSON.stringify(Object.keys(sh).sort().map(k => [k, stripU(sh[k])]));
+function recordUndo() {
+  if (prevShifts && shiftsSig(prevShifts) !== shiftsSig(state.shifts)) {
+    undoStack.push(prevShifts);
+    if (undoStack.length > 30) undoStack.shift();
+  }
+  prevShifts = JSON.parse(JSON.stringify(state.shifts));
+  const b = document.getElementById("undoBtn"); if (b) b.disabled = !undoStack.length;
+}
+function undo() {
+  if (!undoStack.length) { toast("戻せる操作がありません"); return; }
+  state.shifts = undoStack.pop();
+  prevShifts = JSON.parse(JSON.stringify(state.shifts));
+  stamp(); persist(); scheduleSync();
+  $("undoBtn").disabled = !undoStack.length;
+  render(); toast("1つ前の状態に戻しました");
+}
 
 // ---- 同期用：どの日がいつ変わったかを記録する ----
 const SETTING_KEYS = ["presets", "title", "location", "alarm", "wage", "nightRate", "fare", "lastQuad"];
@@ -941,6 +977,33 @@ function monthPay(y, m) {
     }
   }
   return r;
+}
+function renderActList(ent) {
+  const { year: y, month: m } = state;
+  const tKey = key(today.getFullYear(), today.getMonth() + 1, today.getDate());
+  const t = $("actList");
+  if (!ent.length) { t.innerHTML = `<tr><td class="small">この月はシフトがありません。</td></tr>`; return; }
+  let pm = 0, am = 0, ad = 0;
+  t.innerHTML = `<tr class="small"><td>日付</td><td>予定</td><td>実績</td><td class="r">${state.wage ? "金額・差" : "差"}</td></tr>`;
+  for (const [k, s] of ent) {
+    const { d } = parseKey(k);
+    const a = s.act;
+    pm += workMin(s);
+    if (a) { am += workMin(a); ad++; }
+    const diff = a ? workMin(a) - workMin(s) : 0;
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td class="num">${m}/${d}（${WD[new Date(y, m - 1, d).getDay()]}）</td>` +
+      `<td class="num">${s.start}〜${s.end}</td>` +
+      `<td class="num">${a ? `${a.start}〜${a.end}` : k < tKey ? '<span style="color:var(--warn)">未入力</span>' : '<span class="small">−</span>'}</td>` +
+      `<td class="num r">${state.wage ? (a ? yen(payOf(a).yen + (state.fare || 0)) : '<span class="small">' + yen(payOf(s).yen + (state.fare || 0)) + "</span>") + "<br>" : ""}` +
+      `<span class="small">${a ? (diff ? `<span class="${diff > 0 ? "diff-plus" : "diff-minus"}">${diff > 0 ? "+" : "−"}${Math.abs(diff)}分</span>` : "±0") : ""}</span></td>`;
+    tr.style.cursor = "pointer";
+    tr.addEventListener("click", () => { select(k, false); $("actCard").scrollIntoView({ block: "start", behavior: "smooth" }); });
+    t.appendChild(tr);
+  }
+  const foot = document.createElement("tr");
+  foot.innerHTML = `<td><b>合計</b></td><td class="num">${fmtHours(pm)}h</td><td class="num">${ad ? fmtHours(am) + "h（" + ad + "日）" : "−"}</td><td></td>`;
+  t.appendChild(foot);
 }
 function renderPay() {
   const { year: y, month: m } = state;
@@ -1042,16 +1105,15 @@ function render() {
     const { d } = parseKey(k);
     const tr = document.createElement("tr");
     if (s.warn) tr.className = "warn";
-    const a = s.act;
-    const shown = a || s;
     tr.innerHTML = `<td class="num">${m}/${d}（${WD[new Date(y, m - 1, d).getDay()]}）</td>` +
-      `<td class="num">${s.start}〜${overnight(s) ? "翌" : ""}${s.end}${a && (a.start !== s.start || a.end !== s.end) ? `<br><span class="small">実際 ${a.start}〜${a.end}</span>` : ""}</td>` +
-      `<td class="num r">${fmtHours(workMin(shown))}h${s.warn ? " ⚠" : ""}${a ? " ✓" : ""}${state.wage ? `<br><span class="small">${yen(payOf(shown).yen + (state.fare || 0))}</span>` : ""}</td>`;
+      `<td class="num">${s.start}〜${overnight(s) ? "翌" : ""}${s.end}${s.brk ? `<br><span class="small">休憩${s.brk}分</span>` : ""}</td>` +
+      `<td class="num r">${fmtHours(workMin(s))}h${s.warn ? " ⚠" : ""}${state.wage ? `<br><span class="small">${yen(payOf(s).yen + (state.fare || 0))}</span>` : ""}</td>`;
     tr.style.cursor = "pointer";
     tr.addEventListener("click", () => select(k, false));
     list.appendChild(tr);
   }
   renderPay();
+  renderActList(ent);
   $("rdTarget").textContent = `対象：${y}年${m}月（${daysInMonth(y, m)}行）※月はカレンダーの ◀ ▶ で切り替え`;
   renderEditor();
   renderPresets();
@@ -1071,6 +1133,8 @@ function renderEditor() {
   $("actEnd").value = a ? a.end : "";
   $("actBrk").value = a && a.brk ? a.brk : "";
   $("actBox").hidden = !s;
+  $("actNone").hidden = !!s;
+  $("actDate").textContent = `${m}月${d}日（${WD[new Date(y, m - 1, d).getDay()]}）`;
   if (s) {
     const tKey = key(today.getFullYear(), today.getMonth() + 1, today.getDate());
     $("actNote").innerHTML = a
@@ -1145,10 +1209,18 @@ function applyPreset(i) {
   const p = state.presets[i]; if (!p || !state.selected) return;
   setShift(state.selected, p.start, p.end, p.brk || 0); moveSel(1);
 }
-function toast(msg) {
-  const t = $("toast"); t.textContent = msg; t.classList.add("show");
-  clearTimeout(toast._t); toast._t = setTimeout(() => t.classList.remove("show"), 2600);
+function toast(msg, withUndo = false) {
+  const t = $("toast"); t.innerHTML = "";
+  const span = document.createElement("span"); span.textContent = msg; t.appendChild(span);
+  if (withUndo) {
+    const b = document.createElement("button"); b.type = "button"; b.textContent = "元に戻す";
+    b.onclick = () => { t.classList.remove("show"); undo(); };
+    t.appendChild(b);
+  }
+  t.classList.add("show");
+  clearTimeout(toast._t); toast._t = setTimeout(() => t.classList.remove("show"), withUndo ? 6000 : 2600);
 }
+const dayLabel = k => { const { m, d } = parseKey(k); return `${m}/${d}`; };
 function download(name, text, type) {
   const a = document.createElement("a");
   a.href = URL.createObjectURL(new Blob([text], { type })); a.download = name;
@@ -1164,7 +1236,12 @@ $("edSave").onclick = () => {
   if (s === e) { toast("出勤と退勤が同じ時刻です"); return; }
   setShift(state.selected, s, e, b); moveSel(1);
 };
-$("edDel").onclick = () => { setShift(state.selected, null, null); render(); };
+$("edDel").onclick = () => {
+  const k = state.selected, had = !!state.shifts[k];
+  setShift(k, null, null); render();
+  if (had) toast(`${dayLabel(k)} のシフトを消しました`, true);
+};
+$("undoBtn").onclick = () => undo();
 [$("edStart"), $("edEnd"), $("edBrk")].forEach(inp => inp.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); $("edSave").click(); } }));
 $("addPreset").onclick = () => {
   const s = $("edStart").value, e = $("edEnd").value;
@@ -1195,7 +1272,7 @@ $("actSave").onclick = () => {
   s.act = { start: st, end: en, brk: b }; save(); render();
   toast("実績を保存しました");
 };
-$("actDel").onclick = () => { const s = state.shifts[state.selected]; if (!s) return; delete s.act; save(); render(); };
+$("actDel").onclick = () => { const s = state.shifts[state.selected]; if (!s || !s.act) return; delete s.act; save(); render(); toast(`${dayLabel(state.selected)} の実績を消しました`, true); };
 [$("actStart"), $("actEnd"), $("actBrk")].forEach(inp => inp.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); $("actSave").click(); } }));
 $("fillActual").onclick = () => {
   const tKey = key(today.getFullYear(), today.getMonth() + 1, today.getDate());
@@ -1237,10 +1314,11 @@ $("exportCsv").onclick = () => {
 
 document.addEventListener("keydown", e => {
   const tag = (e.target.tagName || "").toLowerCase();
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "z" && tag !== "input" && tag !== "textarea") { e.preventDefault(); undo(); return; }
   if (tag === "input" || tag === "textarea" || e.ctrlKey || e.metaKey || e.altKey || !state.selected) return;
   if (/^[1-9]$/.test(e.key)) { e.preventDefault(); applyPreset(+e.key - 1); }
-  else if (e.key === " ") { e.preventDefault(); setShift(state.selected, null, null); moveSel(1); }
-  else if (e.key === "Delete" || e.key === "Backspace") { e.preventDefault(); setShift(state.selected, null, null); render(); document.querySelector(`.day[data-k="${state.selected}"]`)?.focus(); }
+  else if (e.key === " ") { e.preventDefault(); const k = state.selected, had = !!state.shifts[k]; setShift(k, null, null); moveSel(1); if (had) toast(`${dayLabel(k)} を休みにしました`, true); }
+  else if (e.key === "Delete" || e.key === "Backspace") { e.preventDefault(); const k = state.selected, had = !!state.shifts[k]; setShift(k, null, null); render(); document.querySelector(`.day[data-k="${k}"]`)?.focus(); if (had) toast(`${dayLabel(k)} のシフトを消しました`, true); }
   else if (e.key === "ArrowRight") { e.preventDefault(); moveSel(1); }
   else if (e.key === "ArrowLeft") { e.preventDefault(); moveSel(-1); }
   else if (e.key === "ArrowDown") { e.preventDefault(); moveSel(7); }
@@ -1495,10 +1573,9 @@ function payload() {
   return { v: 1, shifts: state.shifts, tomb: state.tomb, settings: settingsOf(state), settingsU: state.settingsU || 0 };
 }
 function feedIcs() {
-  // 過ぎた日で実績があれば実績の時間、それ以外は予定の時間
-  const tKey = key(today.getFullYear(), today.getMonth() + 1, today.getDate());
+  // カレンダーには常に予定（シフト）の時間を出す。実績はアプリの中だけで使う
   const ent = Object.entries(state.shifts).sort(([a], [b]) => a.localeCompare(b))
-    .map(([k, s]) => [k, s.act && k < tKey ? { ...s.act } : s]);
+    .map(([k, s]) => [k, { start: s.start, end: s.end, brk: s.brk || 0 }]);
   return buildIcs(ent, { ...state, feed: true });
 }
 // 日ごとに新しい方を採用してまとめる
@@ -1555,6 +1632,7 @@ async function syncNow() {
     let remote = null; try { remote = remoteText ? JSON.parse(remoteText) : null; } catch (e) {}
     const changed = mergeRemote(remote);
     lastSnap = makeSnap(); persist();
+    if (changed) prevShifts = JSON.parse(JSON.stringify(state.shifts));
     if (changed) { render(); $("wage").value = state.wage || ""; $("fare").value = state.fare || ""; $("nightRate").checked = state.nightRate !== false; $("evTitle").value = state.title; $("evLoc").value = state.location; $("evAlarm").value = state.alarm; }
     const body = JSON.stringify(payload()), ics = feedIcs();
     const remoteIcs = g.files[FEED_FILE] ? g.files[FEED_FILE].content : "";
