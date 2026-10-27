@@ -410,7 +410,8 @@ details summary { cursor: pointer; font-weight: 500; }
       <details id="syncSettings">
         <summary class="small">同期の設定</summary>
         <div class="grid2" style="margin-top:8px">
-          <label for="ghToken">トークン</label><input id="ghToken" type="password" autocomplete="off" placeholder="ghp_…" class="num">
+          <label for="ghToken">トークン</label>
+          <div class="feed"><input id="ghToken" type="password" name="shiftcal-sync-token" autocomplete="new-password" autocapitalize="off" autocorrect="off" spellcheck="false" data-lpignore="true" data-1p-ignore placeholder="ghp_…" class="num"><button id="tokShow" type="button">表示</button><button id="tokCopy" type="button">コピー</button></div>
         </div>
         <div class="row" style="margin-top:8px">
           <button class="primary" id="syncStart">同期を開始</button>
@@ -1654,11 +1655,22 @@ async function syncNow() {
   }
 }
 $("syncStart").onclick = () => {
-  const t = $("ghToken").value.trim();
+  // 余計な文字（空白・改行や、ブラウザが自動で入れたパスワード）が混ざっていても、トークンの部分だけを取り出す
+  const raw = $("ghToken").value;
+  const m = raw.match(/(ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,})/);
+  const t = m ? m[1] : raw.trim();
   if (!t) { syncStatus("トークンを貼り付けてください。", "err"); return; }
+  $("ghToken").value = t;
   state.sync = { token: t }; persist(); renderSync(); syncNow();
 };
 $("syncNowBtn").onclick = () => syncNow();
+$("tokShow").onclick = () => { const i = $("ghToken"); const show = i.type === "password"; i.type = show ? "text" : "password"; $("tokShow").textContent = show ? "隠す" : "表示"; };
+$("tokCopy").onclick = async () => {
+  const v = $("ghToken").value.trim();
+  if (!v) { toast("トークンが入っていません"); return; }
+  try { await navigator.clipboard.writeText(v); toast("トークンをコピーしました。人には見せないでください"); }
+  catch (e) { const i = $("ghToken"); i.type = "text"; $("tokShow").textContent = "隠す"; i.select(); toast("トークンを表示しました。選択してコピーしてください"); }
+};
 $("syncStop").onclick = () => { state.sync = {}; persist(); renderSync(); syncStatus("この端末の同期をやめました（データはこの端末に残っています）。"); };
 $("copyFeed").onclick = async () => {
   const el = $("feedUrl");
