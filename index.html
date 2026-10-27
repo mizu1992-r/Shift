@@ -1,0 +1,1723 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="シフト">
+<meta name="theme-color" content="#2552c9">
+<title>ShiftCalendar</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@400;500;700&family=JetBrains+Mono:wght@400;600&display=swap">
+<style>
+/* Layout: 左にシフト表の写真（四隅指定・マス目表示）、右に読み取り結果とカレンダー */
+:root {
+  --bg: #eef1f5;
+  --surface: #ffffff;
+  --ink: #1d2733;
+  --muted: #64707e;
+  --line: #d6dce4;
+  --accent: #2552c9;
+  --accent-soft: #e3eafb;
+  --sun: #c8352b;
+  --sat: #2552c9;
+  --shift: #0f7a5c;
+  --shift-soft: #dff3ec;
+  --warn: #b5530b;
+  --warn-soft: #fdebd9;
+  --stage: #2a313b;
+  --font-body: "Zen Kaku Gothic New", "Hiragino Sans", "Yu Gothic UI", "Meiryo", sans-serif;
+  --font-num: "JetBrains Mono", "Consolas", "Menlo", monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #14181e;
+    --surface: #1c222b;
+    --ink: #e4e9ef;
+    --muted: #93a0ae;
+    --line: #2f3843;
+    --accent: #7c9cf0;
+    --accent-soft: #232f4a;
+    --sun: #f07a70;
+    --sat: #7c9cf0;
+    --shift: #4cc79f;
+    --shift-soft: #183a30;
+    --warn: #f0a35e;
+    --warn-soft: #3d2a17;
+    --stage: #0c0f13;
+    color-scheme: dark;
+  }
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+html, body { height: 100%; margin: 0; }
+body {
+  background: var(--bg); color: var(--ink);
+  font-family: var(--font-body); font-size: 14px; line-height: 1.5;
+  display: flex; flex-direction: column;
+}
+button, input, textarea { font: inherit; color: inherit; }
+button {
+  cursor: pointer; border: 1px solid var(--line); background: var(--surface);
+  border-radius: 6px; padding: 6px 10px;
+}
+button:hover:not(:disabled) { border-color: var(--accent); }
+button:disabled { opacity: .5; cursor: default; }
+button:focus-visible, input:focus-visible, textarea:focus-visible, .day:focus-visible {
+  outline: 2px solid var(--accent); outline-offset: 1px;
+}
+button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 700; }
+input[type=text], input[type=number], input[type=time], textarea {
+  border: 1px solid var(--line); border-radius: 6px; padding: 6px 8px; background: var(--surface); min-width: 0;
+}
+.num { font-family: var(--font-num); font-variant-numeric: tabular-nums; }
+
+header {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  padding: 10px max(16px, env(safe-area-inset-right, 0px)) 10px max(16px, env(safe-area-inset-left, 0px));
+  border-bottom: 1px solid var(--line); background: var(--surface);
+}
+header h1 { font-size: 17px; margin: 0; letter-spacing: .02em; }
+header h1 span { color: var(--accent); }
+header .sub { color: var(--muted); font-size: 12.5px; }
+
+main.app { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) 440px; }
+@media (max-width: 900px) {
+  main.app { grid-template-columns: 1fr; grid-template-rows: 60vh auto; }
+  body { height: auto; }
+}
+
+/* ---- viewer ---- */
+.viewer { display: flex; flex-direction: column; min-width: 0; min-height: 0; background: var(--stage); }
+.toolbar {
+  display: flex; gap: 6px; flex-wrap: wrap; align-items: center;
+  padding: 8px 12px; background: var(--surface); border-bottom: 1px solid var(--line);
+}
+.toolbar .sep { width: 1px; height: 20px; background: var(--line); margin: 0 4px; }
+.stage { position: relative; flex: 1; overflow: hidden; touch-action: none; cursor: crosshair; min-height: 240px; }
+.stage.panning { cursor: grabbing; }
+.layer { position: absolute; left: 0; top: 0; transform-origin: 0 0; }
+.layer img { display: block; max-width: none; user-select: none; -webkit-user-drag: none; }
+.layer svg { position: absolute; left: 0; top: 0; overflow: visible; pointer-events: none; }
+.empty {
+  position: absolute; inset: 16px; border: 2px dashed #5b6676; border-radius: 12px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px;
+  color: #c3ccd7; text-align: center; padding: 16px;
+}
+.empty strong { font-size: 16px; color: #fff; }
+.stage.drag .empty { border-color: #ffcf33; }
+.stepbar {
+  display: flex; gap: 10px; align-items: center; padding: 8px 12px; background: #161b22; color: #e8edf3; font-size: 13px; min-height: 40px;
+}
+.stepbar .badge { flex: none; background: #ffcf33; color: #1d2733; font-weight: 700; border-radius: 999px; padding: 1px 9px; font-family: var(--font-num); font-size: 12px; }
+
+/* ---- panel ---- */
+.panel {
+  overflow-y: auto; background: var(--surface); border-left: 1px solid var(--line);
+  padding: 14px max(16px, env(safe-area-inset-right, 0px)) 24px 16px;
+  display: flex; flex-direction: column; gap: 16px;
+}
+.card { border: 1px solid var(--line); border-radius: 10px; padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+.card h3 { margin: 0; font-size: 13px; color: var(--muted); font-weight: 500; letter-spacing: .04em; }
+.card.reader { border-color: var(--accent); }
+.status { font-size: 13px; white-space: pre-line; }
+.status.busy::before {
+  content: ""; display: inline-block; width: 10px; height: 10px; margin-right: 6px; vertical-align: -1px;
+  border: 2px solid var(--accent); border-right-color: transparent; border-radius: 50%; animation: spin .8s linear infinite;
+}
+.status.err { color: var(--sun); }
+@keyframes spin { to { transform: rotate(360deg); } }
+.total { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.total b { font-size: 22px; font-family: var(--font-num); }
+.checks { display: flex; flex-wrap: wrap; gap: 6px; }
+.checks button { border-color: var(--warn); background: var(--warn-soft); font-size: 12.5px; padding: 4px 8px; }
+
+.monthnav { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.monthnav h2 { margin: 0; font-size: 20px; }
+.summary { color: var(--muted); font-size: 13px; }
+.summary b { color: var(--ink); }
+.cal { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 3px; }
+.dow { text-align: center; font-size: 12px; color: var(--muted); padding-bottom: 2px; }
+.dow.sun { color: var(--sun); } .dow.sat { color: var(--sat); }
+.day {
+  min-height: 54px; border: 1px solid var(--line); border-radius: 6px; padding: 3px 4px;
+  display: flex; flex-direction: column; gap: 1px; cursor: pointer; background: var(--surface);
+  font-size: 12px; text-align: left;
+}
+.day.blank { visibility: hidden; }
+.day .d { font-weight: 700; font-size: 13px; display: flex; justify-content: space-between; align-items: center; }
+.day.sun .d { color: var(--sun); } .day.sat .d { color: var(--sat); }
+.day.has { background: var(--shift-soft); border-color: transparent; }
+.day.read { border: 1px dashed var(--shift); }
+.day.warn { background: var(--warn-soft); border: 1px dashed var(--warn); }
+.day .tag { font-size: 9px; font-weight: 700; color: var(--warn); }
+.day .t { font-family: var(--font-num); font-size: 10.5px; color: var(--shift); line-height: 1.25; }
+.day.warn .t { color: var(--warn); }
+.day.sel { outline: 2px solid var(--accent); outline-offset: 0; }
+.day.today .d span:first-child { text-decoration: underline; text-underline-offset: 2px; }
+
+.editor-date { font-size: 18px; font-weight: 700; }
+.row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.row input[type=time] { font-family: var(--font-num); width: 116px; }
+.row input.brk { width: 72px; font-family: var(--font-num); }
+.raw { font-family: var(--font-num); font-size: 12px; color: var(--warn); }
+.presets { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip {
+  display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--line);
+  border-radius: 999px; padding: 3px 4px 3px 10px; font-size: 12.5px; background: var(--surface);
+}
+.chip .key { font-family: var(--font-num); font-size: 11px; background: var(--accent-soft); color: var(--accent); border-radius: 4px; padding: 0 5px; }
+.chip button { border: 0; padding: 0 6px; background: transparent; color: var(--muted); }
+.chip .apply { padding: 0; font-family: var(--font-num); color: var(--ink); }
+kbd { font-family: var(--font-num); font-size: 11px; border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 4px; padding: 0 4px; }
+.keys { color: var(--muted); font-size: 12px; line-height: 1.8; }
+textarea { width: 100%; min-height: 96px; font-family: var(--font-num); resize: vertical; }
+.small { font-size: 12px; color: var(--muted); }
+.grid2 { display: grid; grid-template-columns: 90px minmax(0, 1fr); gap: 8px; align-items: center; }
+.list { width: 100%; border-collapse: collapse; font-size: 13px; }
+.list td { padding: 4px 6px; border-bottom: 1px solid var(--line); }
+.list td.r { text-align: right; }
+.list tr.warn td { color: var(--warn); }
+/* スマホ */
+@media (max-width: 900px) {
+  input, textarea { font-size: 16px; }          /* iPhoneで入力時に勝手に拡大されないように */
+  header .sub { display: none; }
+  .toolbar { gap: 4px; padding: 6px 8px; }
+  .toolbar button { padding: 6px 8px; }
+  .toolbar .sep { display: none; }
+  .panel { border-left: 0; padding-bottom: calc(24px + env(safe-area-inset-bottom, 0px)); }
+}
+@media (hover: none) { .keys { display: none; } }
+.sync-ok { color: var(--shift); }
+.feed { display: flex; gap: 6px; }
+.feed input { flex: 1; min-width: 0; font-family: var(--font-num); font-size: 12px; }
+/* お給料 */
+.card.pay { gap: 8px; }
+.payrow { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.payrow b { font-family: var(--font-num); font-variant-numeric: tabular-nums; font-size: 17px; }
+.payrow.main b { font-size: 24px; color: var(--accent); }
+.payrow .small { flex: 1; min-width: 0; }
+.diff-plus { color: var(--shift); } .diff-minus { color: var(--sun); }
+.actual { border-top: 1px dashed var(--line); padding-top: 10px; display: flex; flex-direction: column; gap: 8px; }
+.day .ok { font-size: 10px; color: var(--shift); font-weight: 700; }
+.day .todo { font-size: 9px; color: var(--muted); }
+.toast {
+  position: fixed; left: 50%; bottom: calc(20px + env(safe-area-inset-bottom, 0px)); transform: translateX(-50%);
+  background: var(--ink); color: var(--surface); padding: 8px 16px; border-radius: 8px; font-size: 13px;
+  opacity: 0; transition: opacity .2s; pointer-events: none; max-width: calc(100% - 32px);
+}
+.toast.show { opacity: 1; }
+@media (prefers-reduced-motion: reduce) { .toast { transition: none; } .status.busy::before { animation: none; } }
+details summary { cursor: pointer; font-weight: 500; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Shift<span>Calendar</span></h1>
+  <div class="sub">シフト表の写真から自分の勤務を読み取り → 確認 → .ics で Googleカレンダーへ</div>
+</header>
+
+<main class="app">
+  <!-- ===== 写真ビューア ===== -->
+  <section class="viewer">
+    <div class="toolbar">
+      <button id="openBtn">写真を開く</button>
+      <input id="fileInput" type="file" accept="image/*,.heic,.heif" hidden>
+      <span class="sep"></span>
+      <button id="zoomOut" title="縮小">−</button>
+      <button id="zoomIn" title="拡大">＋</button>
+      <button id="fitBtn">全体表示</button>
+      <button id="rotBtn" title="90°回転">⟳ 90°</button>
+      <span class="sep"></span>
+      <button id="redoQuad">四隅をやり直す</button>
+    </div>
+    <div class="stage" id="stage">
+      <div class="layer" id="layer">
+        <img id="img" alt="シフト表">
+        <svg id="overlay" xmlns="http://www.w3.org/2000/svg"></svg>
+      </div>
+      <div class="empty" id="empty">
+        <strong>シフト表の写真をここにドロップ</strong>
+        <div>または「写真を開く」／ 画像をコピーして <kbd>Ctrl</kbd>+<kbd>V</kbd> で貼り付け</div>
+      </div>
+    </div>
+    <div class="stepbar"><span class="badge" id="stepBadge">1</span><span id="stepText">シフト表の写真を開いてください。</span></div>
+  </section>
+
+  <!-- ===== 右側パネル ===== -->
+  <section class="panel">
+    <div class="card reader">
+      <h3>写真から読み取り</h3>
+      <div class="status" id="rdStatus">写真を開き、自分の列（出・退・休・実の4マス）の四隅をクリックしてください。</div>
+      <div class="small" id="rdTarget"></div>
+      <div class="row">
+        <button class="primary" id="rdRun" disabled>読み取る</button>
+        <button id="rdUndo" hidden>読み取り前に戻す</button>
+      </div>
+      <div id="rdResult" hidden>
+        <div class="total">読み取った合計 <b id="rdSum"></b> 時間</div>
+        <div class="small">表の一番下にある自分の合計と同じなら、ほぼ合っています。違うときは「要確認」の日から見直してください。</div>
+        <div class="checks" id="rdChecks"></div>
+      </div>
+    </div>
+
+    <div class="monthnav">
+      <button id="prevM" aria-label="前の月">◀</button>
+      <h2 id="monthTitle" class="num"></h2>
+      <button id="nextM" aria-label="次の月">▶</button>
+    </div>
+    <div class="summary" id="summary"></div>
+
+    <div class="cal" id="cal"></div>
+
+    <div class="card pay">
+      <h3 id="payTitle">この月のお給料</h3>
+      <div id="payNoWage" class="small">時給を入れると、見込み額と実際の額を計算します。</div>
+      <div id="payBody">
+        <div class="payrow main"><span class="small">今月の着地予想<br>（働いた日は実績、これからの日は予定で計算）</span><b id="payMix"></b></div>
+        <div class="payrow"><span class="small">見込み（予定どおり全部働いた場合）</span><b id="payPlan"></b></div>
+        <div class="payrow"><span class="small" id="payActLabel">実績（入力済みの日だけ）</span><b id="payAct"></b></div>
+        <div class="small" id="payDetail"></div>
+      </div>
+      <div class="row"><button id="fillActual">今日より前の未入力の日を「予定どおり」で実績入力</button></div>
+      <details id="paySettings">
+        <summary class="small">時給・交通費の設定</summary>
+        <div class="grid2" style="margin-top:8px">
+          <label for="wage">時給</label><div class="row"><input id="wage" type="number" min="0" step="10" style="width:100px" class="num"> <span class="small">円</span></div>
+          <label for="nightRate">深夜手当</label><label class="row small"><input id="nightRate" type="checkbox"> 22時〜翌5時は25%増し</label>
+          <label for="fare">交通費</label><div class="row"><input id="fare" type="number" min="0" step="10" style="width:100px" class="num"> <span class="small">円 / 1日（往復）</span></div>
+        </div>
+        <p class="small" style="margin:6px 0 0">税金や社会保険を引く前の金額（額面）です。1分単位で計算しています。お店が15分単位などで切り捨てている場合は、実際の振込額と少しずれます。</p>
+      </details>
+    </div>
+
+    <div class="card">
+      <div class="editor-date" id="edDate"></div>
+      <div class="small"><b>予定</b>（シフト）</div>
+      <div class="row">
+        <input id="edStart" type="time" step="300" aria-label="出勤">
+        <span>〜</span>
+        <input id="edEnd" type="time" step="300" aria-label="退勤">
+        <label class="small" for="edBrk">休憩</label>
+        <input id="edBrk" class="brk" type="number" min="0" step="15" aria-label="休憩（分）"><span class="small">分</span>
+      </div>
+      <div class="row">
+        <button class="primary" id="edSave">登録</button>
+        <button id="edDel">消す</button>
+      </div>
+      <div class="small" id="edNote"></div>
+      <div class="actual" id="actBox">
+        <div class="small"><b>実際に働いた時間</b>（後日入力。早上がり・残業があったとき用）</div>
+        <div class="row">
+          <input id="actStart" type="time" step="60" aria-label="実際の出勤">
+          <span>〜</span>
+          <input id="actEnd" type="time" step="60" aria-label="実際の退勤">
+          <label class="small" for="actBrk">休憩</label>
+          <input id="actBrk" class="brk" type="number" min="0" step="5" aria-label="実際の休憩（分）"><span class="small">分</span>
+        </div>
+        <div class="row">
+          <button id="actSame">予定どおり</button>
+          <button class="primary" id="actSave">実績を保存</button>
+          <button id="actDel">実績を消す</button>
+        </div>
+        <div class="small" id="actNote"></div>
+      </div>
+      <div class="presets" id="presets"></div>
+      <div class="row"><button id="addPreset">＋ 入力中の時間をよく使う時間に追加</button></div>
+      <div class="keys">
+        日付を選んで <kbd>1</kbd>〜<kbd>9</kbd>：よく使う時間を登録して次の日へ ／
+        <kbd>Space</kbd>：休み ／ <kbd>Delete</kbd>：消す ／ <kbd>←</kbd><kbd>→</kbd><kbd>↑</kbd><kbd>↓</kbd>：日付移動 ／ <kbd>Enter</kbd>：時刻を入力
+      </div>
+    </div>
+
+    <details class="card">
+      <summary>まとめて文字で入力</summary>
+      <div class="small">1行に「日 出-退」。シフト表と同じ「17.50」（＝17:30）の書き方も使えます。例：<span class="num">3 10-18</span> ／ <span class="num">5 17.50-21.50</span> ／ <span class="num">11/7 17:30-22</span></div>
+      <textarea id="bulk" placeholder="1 12-17&#10;2 17.50-21.50&#10;13 12-20"></textarea>
+      <div class="row"><button class="primary" id="bulkApply">表示中の月に反映</button></div>
+    </details>
+
+    <div class="card" id="syncCard">
+      <h3>スマホ・パソコンで同期</h3>
+      <div class="status" id="syncStatus">まだ設定されていません。下の「同期の設定」から始めてください。</div>
+      <div id="syncFeed" hidden>
+        <div class="small"><b>カレンダー購読URL</b>：これをカレンダーに登録すると、シフトを直すたびに自動で反映されます（.ics の取り込み直しは不要）。</div>
+        <div class="feed"><input id="feedUrl" type="text" readonly aria-label="カレンダー購読URL"><button id="copyFeed">コピー</button></div>
+        <details>
+          <summary class="small">iPhoneのカレンダーに登録する</summary>
+          <ol class="small" style="padding-left:18px;margin:6px 0 0">
+            <li>上の「コピー」を押す</li>
+            <li>「設定」アプリ →「カレンダー」→「カレンダーアカウント」→「アカウントを追加」</li>
+            <li>「その他」→「照会するカレンダーを追加」→ コピーしたURLを貼り付けて「次へ」→「保存」</li>
+            <li>同じ画面の「データの取得方法」で、照会カレンダーを「1時間ごと」などにすると早く反映されます</li>
+          </ol>
+        </details>
+        <details>
+          <summary class="small">Googleカレンダーに登録する（パソコン）</summary>
+          <ol class="small" style="padding-left:18px;margin:6px 0 0">
+            <li>Googleカレンダーの左の「他のカレンダー」の「＋」→「URLで追加」</li>
+            <li>コピーしたURLを貼り付けて「カレンダーを追加」</li>
+          </ol>
+          <p class="small" style="margin:6px 0 0">Google側の更新は数時間〜1日ほど遅れます。iPhoneとGoogleの両方に登録すると、iPhoneで予定が二重に見えることがあるので、どちらか一方がおすすめです。</p>
+        </details>
+      </div>
+      <details id="syncSettings">
+        <summary class="small">同期の設定</summary>
+        <div class="grid2" style="margin-top:8px">
+          <label for="ghToken">トークン</label><input id="ghToken" type="password" autocomplete="off" placeholder="ghp_…" class="num">
+        </div>
+        <div class="row" style="margin-top:8px">
+          <button class="primary" id="syncStart">同期を開始</button>
+          <button id="syncNowBtn" hidden>今すぐ同期</button>
+          <button id="syncStop" hidden>この端末の同期をやめる</button>
+        </div>
+        <ol class="small" style="padding-left:18px;margin:8px 0 0">
+          <li>GitHubにログインして「Settings」→「Developer settings」→「Personal access tokens」→「Tokens (classic)」→「Generate new token (classic)」</li>
+          <li>Note に「ShiftCalendar」、Expiration は「No expiration」か長め、チェックは <b>gist だけ</b> にして作成</li>
+          <li>表示されたトークン（ghp_ で始まる文字）をコピーして上に貼り、「同期を開始」</li>
+          <li>スマホでも同じトークンを貼れば、同じデータが使えます</li>
+        </ol>
+        <p class="small" style="margin:6px 0 0">データはあなたのGitHubの非公開Gist（URLを知っている人だけが見られるメモ）に保存されます。トークンはこの端末のブラウザにだけ保存され、他の人には送られません。トークンは人に見せないでください。</p>
+      </details>
+    </div>
+
+    <div class="card">
+      <h3>書き出し</h3>
+      <div class="grid2">
+        <label for="evTitle">予定名</label><input id="evTitle" type="text">
+        <label for="evLoc">場所</label><input id="evLoc" type="text" placeholder="（任意）">
+        <label for="evAlarm">通知</label>
+        <div class="row"><input id="evAlarm" type="number" min="0" step="5" style="width:80px"> <span class="small">分前（0でなし）</span></div>
+      </div>
+      <label class="row small"><input type="checkbox" id="onlyMonth" checked> 表示中の月だけ書き出す</label>
+      <div class="row">
+        <button class="primary" id="exportIcs">.ics を書き出す</button>
+        <button id="exportCsv">CSV</button>
+      </div>
+      <details>
+        <summary class="small">Googleカレンダーへの取り込み方</summary>
+        <ol class="small" style="padding-left:18px;margin:6px 0 0">
+          <li>パソコンで Googleカレンダーを開き、右上の歯車 →「設定」</li>
+          <li>左の「インポート / エクスポート」→ 書き出した .ics ファイルを選択</li>
+          <li>追加先のカレンダーを選んで「インポート」</li>
+        </ol>
+        <p class="small" style="margin:6px 0 0">「バイト」専用のカレンダーを作って取り込むと、間違えたときにカレンダーごと消してやり直せます。</p>
+      </details>
+    </div>
+
+    <div class="card">
+      <h3>この月のシフト一覧</h3>
+      <table class="list" id="list"></table>
+    </div>
+  </section>
+</main>
+
+<div class="toast" id="toast" role="status"></div>
+
+<script>
+"use strict";
+// ===== ShiftCalendar 読み取りコア（DOMに依存しない純粋な処理） =====
+
+// 4点 → 4点 の射影変換行列（dst座標 → src座標 を返す行列を作るには引数を入れ替える）
+function homography(from, to) {
+  // from[i] -> to[i] となる 3x3 行列 h を解く（h33 = 1）
+  const A = [], b = [];
+  for (let i = 0; i < 4; i++) {
+    const [x, y] = from[i], [u, v] = to[i];
+    A.push([x, y, 1, 0, 0, 0, -u * x, -u * y]); b.push(u);
+    A.push([0, 0, 0, x, y, 1, -v * x, -v * y]); b.push(v);
+  }
+  // ガウスの消去法
+  for (let c = 0; c < 8; c++) {
+    let p = c;
+    for (let r = c + 1; r < 8; r++) if (Math.abs(A[r][c]) > Math.abs(A[p][c])) p = r;
+    [A[c], A[p]] = [A[p], A[c]]; [b[c], b[p]] = [b[p], b[c]];
+    for (let r = 0; r < 8; r++) {
+      if (r === c) continue;
+      const f = A[r][c] / A[c][c];
+      for (let k = c; k < 8; k++) A[r][k] -= f * A[c][k];
+      b[r] -= f * b[c];
+    }
+  }
+  const h = b.map((v, i) => v / A[i][i]);
+  return [h[0], h[1], h[2], h[3], h[4], h[5], h[6], h[7], 1];
+}
+function applyH(h, x, y) {
+  const w = h[6] * x + h[7] * y + h[8];
+  return [(h[0] * x + h[1] * y + h[2]) / w, (h[3] * x + h[4] * y + h[5]) / w];
+}
+
+// 4点を 左上・右上・右下・左下 の順に並べ替える
+function orderQuad(pts) {
+  const s = [...pts].sort((a, b) => a[1] - b[1]);
+  const top = s.slice(0, 2).sort((a, b) => a[0] - b[0]);
+  const bot = s.slice(2).sort((a, b) => a[0] - b[0]);
+  return [top[0], top[1], bot[1], bot[0]];
+}
+
+// 指定された四隅を、表の罫線にぴったり合う位置まで自動で微調整する
+// 罫線の上は周りより暗い、という性質を使って「罫線らしさ」が最大になる位置を探す
+function snapQuad(src, quad, rows, cols) {
+  const { data, width: sw, height: sh, ox = 0, oy = 0 } = src;
+  const lum = (x, y) => {
+    x -= ox; y -= oy;
+    const x0 = Math.floor(x), y0 = Math.floor(y);
+    if (x0 < 0 || y0 < 0 || x0 + 1 >= sw || y0 + 1 >= sh) return 255;
+    const fx = x - x0, fy = y - y0;
+    const p = (xx, yy) => { const i = (yy * sw + xx) * 4; return (data[i] + data[i + 1] + data[i + 2]) / 3; };
+    return (p(x0, y0) * (1 - fx) + p(x0 + 1, y0) * fx) * (1 - fy) + (p(x0, y0 + 1) * (1 - fx) + p(x0 + 1, y0 + 1) * fx) * fy;
+  };
+    // 1本の線について「端から端まで途切れずに暗いか」を測る（下位30%の値を使うので、途切れる文字は低く出る）
+  const low = arr => { arr.sort((a, b) => a - b); return arr[Math.floor(arr.length * 0.3)]; };
+  // 縦の罫線だけを使う（横の罫線は写真では薄くて当てにならないため。行の位置は fitRows で文字から合わせる）
+  function score(q) {
+    const h = homography([[0, 0], [cols, 0], [cols, rows], [0, rows]], q);
+    let sv = 0;
+    for (let c = 0; c <= cols; c++) {
+      const cs = [];
+      for (let k = 0; k < rows * 4; k++) {
+        const v = (k + 0.5) / 4;
+        const [x, y] = applyH(h, c, v), [xa, ya] = applyH(h, c - 0.25, v), [xb, yb] = applyH(h, c + 0.25, v);
+        cs.push((lum(xa, ya) + lum(xb, yb)) / 2 - lum(x, y));
+      }
+      sv += low(cs) * (c === 0 || c === cols ? 2 : 1);   // 外側の太い線を重視
+    }
+    return sv;
+  }
+  const dist = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]);
+  const cellW = (dist(quad[0], quad[1]) + dist(quad[3], quad[2])) / 2 / cols;
+  const rowH = (dist(quad[0], quad[3]) + dist(quad[1], quad[2])) / 2 / rows;
+  let q = quad.map(p => [...p]);
+  let best = score(q);
+  for (const [range, step] of [[0.6, 0.25], [0.25, 0.08]]) {
+    for (let iter = 0; iter < 3; iter++) {
+      let moved = false;
+      for (let ci = 0; ci < 4; ci++) for (let ax = 0; ax < 1; ax++) {
+        const R = range * (ax === 0 ? cellW : rowH), st = step * (ax === 0 ? cellW : rowH);
+        const orig = q[ci][ax];
+        let bv = orig;
+        for (let d = -R; d <= R + 1e-9; d += st) {
+          q[ci][ax] = orig + d;
+          const sc = score(q);
+          if (sc > best + 1e-6) { best = sc; bv = q[ci][ax]; }
+        }
+        if (bv !== orig) moved = true;
+        q[ci][ax] = bv;
+      }
+      if (!moved) break;
+    }
+  }
+  return q;
+}
+
+// 表の部分をまっすぐな長方形に引き伸ばし、グレースケールにする
+// src: {data(RGBA), width, height, ox, oy}（ox,oy は切り出し位置）、quad は元画像座標
+function warpGray(src, quad, rows, cols) {
+  const dist = (a, b) => Math.hypot(a[0] - b[0], a[1] - b[1]);
+  const srcCW = (dist(quad[0], quad[1]) + dist(quad[3], quad[2])) / 2 / cols;
+  const srcRH = (dist(quad[0], quad[3]) + dist(quad[1], quad[2])) / 2 / rows;
+  const CW = 120, k = CW / srcCW, CH = Math.max(24, srcRH * k);
+  const W = Math.round(CW * cols), H = Math.round(CH * rows);
+  const h = homography([[0, 0], [W, 0], [W, H], [0, H]], quad);
+  const g = new Uint8Array(W * H);
+  const { data, width: sw, height: sh, ox = 0, oy = 0 } = src;
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      let [sx, sy] = applyH(h, x + 0.5, y + 0.5);
+      sx -= ox + 0.5; sy -= oy + 0.5;
+      const x0 = Math.floor(sx), y0 = Math.floor(sy), fx = sx - x0, fy = sy - y0;
+      let v = 255;
+      if (x0 >= 0 && y0 >= 0 && x0 + 1 < sw && y0 + 1 < sh) {
+        // 黄色のマーカーが白くなるよう (R+G)/2 を使う
+        const px = (xx, yy) => { const i = (yy * sw + xx) * 4; return (data[i] + data[i + 1]) / 2; };
+        v = (px(x0, y0) * (1 - fx) + px(x0 + 1, y0) * fx) * (1 - fy) + (px(x0, y0 + 1) * (1 - fx) + px(x0 + 1, y0 + 1) * fx) * fy;
+      }
+      g[y * W + x] = v;
+    }
+  }
+  return { g, W, H, CW, CH };
+}
+
+// 周囲の明るさとの差で文字（インク）を抜き出す → 1 がインク
+function adaptiveInk(g, W, H, win, C) {
+  const I = new Float64Array((W + 1) * (H + 1));
+  for (let y = 0; y < H; y++) {
+    let row = 0;
+    for (let x = 0; x < W; x++) { row += g[y * W + x]; I[(y + 1) * (W + 1) + x + 1] = I[y * (W + 1) + x + 1] + row; }
+  }
+  const r = win >> 1, ink = new Uint8Array(W * H);
+  for (let y = 0; y < H; y++) {
+    const y0 = Math.max(0, y - r), y1 = Math.min(H, y + r + 1);
+    for (let x = 0; x < W; x++) {
+      const x0 = Math.max(0, x - r), x1 = Math.min(W, x + r + 1);
+      const s = I[y1 * (W + 1) + x1] - I[y0 * (W + 1) + x1] - I[y1 * (W + 1) + x0] + I[y0 * (W + 1) + x0];
+      const mean = s / ((x1 - x0) * (y1 - y0));
+      ink[y * W + x] = g[y * W + x] < mean - C ? 1 : 0;
+    }
+  }
+  return ink;
+}
+
+// 罫線（長い横線・縦線）を消す
+function removeLines(ink, W, H, minH, minV) {
+  const kill = new Uint8Array(W * H);
+  for (let y = 0; y < H; y++) {
+    let s = -1;
+    for (let x = 0; x <= W; x++) {
+      const on = x < W && ink[y * W + x];
+      if (on && s < 0) s = x;
+      if (!on && s >= 0) {
+        if (x - s >= minH) for (let k = s; k < x; k++) { kill[y * W + k] = 1; if (y > 0) kill[(y - 1) * W + k] = 1; if (y + 1 < H) kill[(y + 1) * W + k] = 1; }
+        s = -1;
+      }
+    }
+  }
+  for (let x = 0; x < W; x++) {
+    let s = -1;
+    for (let y = 0; y <= H; y++) {
+      const on = y < H && ink[y * W + x];
+      if (on && s < 0) s = y;
+      if (!on && s >= 0) {
+        if (y - s >= minV) for (let k = s; k < y; k++) { kill[k * W + x] = 1; if (x > 0) kill[k * W + x - 1] = 1; if (x + 1 < W) kill[k * W + x + 1] = 1; }
+        s = -1;
+      }
+    }
+  }
+  const out = new Uint8Array(W * H);
+  for (let i = 0; i < W * H; i++) out[i] = ink[i] && !kill[i] ? 1 : 0;
+  // 2x2 オープニング（細かいゴミを消す）
+  const er = new Uint8Array(W * H);
+  for (let y = 0; y < H - 1; y++) for (let x = 0; x < W - 1; x++) {
+    const i = y * W + x;
+    er[i] = out[i] & out[i + 1] & out[i + W] & out[i + W + 1];
+  }
+  const op = new Uint8Array(W * H);
+  for (let y = 0; y < H - 1; y++) for (let x = 0; x < W - 1; x++) {
+    const i = y * W + x;
+    if (er[i]) { op[i] = op[i + 1] = op[i + W] = op[i + W + 1] = 1; }
+  }
+  return op;
+}
+
+// 前処理をまとめて実行
+function prepareGrid(src, quad, rows, cols) {
+  const w = warpGray(src, quad, rows, cols);
+  let win = Math.round(w.CW * 0.34) | 1;
+  const ink0 = adaptiveInk(w.g, w.W, w.H, win, 12);
+  const ink = removeLines(ink0, w.W, w.H, Math.round(w.CW * 0.6), Math.round(w.CH * 0.6));
+  const grid = { ...w, ink, rows, cols };
+  grid.fit = fitRows(grid);
+  return grid;
+}
+
+// 数字が並んでいる高さを見つけ、行の位置（ずれ a と伸び縮み b）を合わせる
+function fitRows(grid) {
+  const { ink, W, H, CH, rows } = grid;
+  const prof = new Float32Array(H);
+  for (let y = 0; y < H; y++) { let n = 0; for (let x = 0; x < W; x++) n += ink[y * W + x]; prof[y] = n; }
+  const thr = W * 0.02;
+  const lines = [];
+  let s = -1, m = 0, wsum = 0;
+  for (let y = 0; y <= H; y++) {
+    const on = y < H && prof[y] > thr;
+    if (on) { if (s < 0) { s = y; m = 0; wsum = 0; } m += y * prof[y]; wsum += prof[y]; }
+    else if (s >= 0) { const hgt = y - s; if (hgt > CH * 0.2 && hgt < CH * 1.3) lines.push(m / wsum); s = -1; }
+  }
+  let best = { a: 0, b: 1, cost: Infinity };
+  if (lines.length < 3) return best;
+  for (let b = 0.94; b <= 1.06 + 1e-9; b += 0.004) {
+    for (let a = -0.6 * CH; a <= 0.6 * CH + 1e-9; a += CH / 40) {
+      let cost = 0;
+      for (const y of lines) {
+        const i = Math.min(rows - 1, Math.max(0, Math.round((y - a) / (b * CH) - 0.5)));
+        const d = Math.abs(y - (a + (i + 0.5) * b * CH));
+        cost += Math.min(d, 0.5 * CH) ** 2;
+      }
+      cost += (a / CH) ** 2 * 0.5 + ((b - 1) * 10) ** 2 * 0.5;   // 大きく動かしすぎないように
+      if (cost < best.cost) best = { a, b, cost };
+    }
+  }
+  return best;
+}
+
+// 1行分の文字を切り出して、出・退・休・実の各マスに振り分ける → [ {bin,w,h} | null ] x cols
+// マスの境目で機械的に切らず、数字のかたまりごとに一番近い列に割り当てる
+function extractRow(grid, i) {
+  const { ink, W, H, CW, CH, cols } = grid;
+  const unit = CW / 30;
+  const fit = grid.fit || { a: 0, b: 1 };
+  const yc = fit.a + (i + 0.5) * fit.b * CH;
+  const y0 = Math.max(0, Math.round(yc - CH * 0.8)), y1 = Math.min(H, Math.round(yc + CH * 0.8));
+  const w = W, h = y1 - y0;
+  const empty = Array(cols).fill(null);
+  if (h <= 0) return empty;
+  const lab = new Int32Array(w * h);
+  const comps = [];
+  const stack = [];
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    if (!ink[(y + y0) * W + x] || lab[y * w + x]) continue;
+    const id = comps.length + 1;
+    let area = 0, minx = x, maxx = x, miny = y, maxy = y, sy = 0, sx = 0;
+    stack.push(y * w + x); lab[y * w + x] = id;
+    while (stack.length) {
+      const p = stack.pop(), py = (p / w) | 0, px = p % w;
+      area++; sy += py; sx += px;
+      if (px < minx) minx = px; if (px > maxx) maxx = px; if (py < miny) miny = py; if (py > maxy) maxy = py;
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+        const nx = px + dx, ny = py + dy;
+        if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+        const q = ny * w + nx;
+        if (ink[(ny + y0) * W + nx] && !lab[q]) { lab[q] = id; stack.push(q); }
+      }
+    }
+    comps.push({ id, area, minx, maxx, miny, maxy, cy: sy / area, cx: sx / area, ch: maxy - miny + 1 });
+  }
+  const yrel = yc - y0;
+  const glyphs = comps.filter(k => k.area > unit * unit * 1.5 && k.ch > CH * 0.25 && k.ch < CH * 1.1 && Math.abs(k.cy - yrel) < CH * 0.55);
+  if (!glyphs.length) return empty;
+  // この行の文字の高さ（中央値）
+  const cys = glyphs.map(k => k.cy).sort((p, q) => p - q);
+  const ly = cys[cys.length >> 1];
+  const keep = comps.filter(k => Math.abs(k.cy - ly) < CH * 0.4 && k.area > 2 && k.ch < CH * 1.1);
+  // 列の境目：境目の近くで文字のない隙間を探し、そこで区切る
+  const xp = new Float32Array(W);
+  for (const k of keep) for (let x = k.minx; x <= k.maxx; x++) xp[x] += 1;
+  const cuts = [0];
+  for (let c = 1; c < cols; c++) {
+    const bx = c * CW, r = Math.round(CW * 0.3);
+    let bestX = bx, bestV = Infinity;
+    for (let x = Math.max(0, bx - r); x <= Math.min(W - 1, bx + r); x++) {
+      const v = xp[x] * 10 + Math.abs(x - bx) / CW;
+      if (v < bestV) { bestV = v; bestX = x; }
+    }
+    cuts.push(bestX);
+  }
+  cuts.push(W);
+  return Array.from({ length: cols }, (_, c) => {
+    const mine = keep.filter(k => k.cx >= cuts[c] && k.cx < cuts[c + 1]);
+    if (mine.reduce((s2, k) => s2 + k.area, 0) < unit * unit * 8) return null;
+    const ids = new Set(mine.map(k => k.id));
+    const bx0 = Math.min(...mine.map(k => k.minx)), bx1 = Math.max(...mine.map(k => k.maxx));
+    const by0 = Math.min(...mine.map(k => k.miny)), by1 = Math.max(...mine.map(k => k.maxy));
+    const bw = bx1 - bx0 + 1, bh = by1 - by0 + 1;
+    const bin = new Uint8Array(bw * bh);
+    for (let y = 0; y < bh; y++) for (let x = 0; x < bw; x++) bin[y * bw + x] = ids.has(lab[(y + by0) * w + x + bx0]) ? 1 : 0;
+    return { bin, w: bw, h: bh };
+  });
+}
+
+// 線を1ピクセル太らせた版（かすれた数字用）
+function thicken(cell) {
+  const { bin, w, h } = cell, out = new Uint8Array(w * h);
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    if (!bin[y * w + x]) continue;
+    out[y * w + x] = 1; if (x + 1 < w) out[y * w + x + 1] = 1; if (y + 1 < h) out[(y + 1) * w + x] = 1;
+  }
+  return { bin: out, w, h };
+}
+
+// ---- 読み取った文字列を「出・退・休・実」の正しい組み合わせに直す ----
+// 見間違えやすい数字の組は置き換えコストを下げる、"0" の抜け・増えも安くする
+const SIMILAR = new Set(["08", "58", "68", "38", "06", "09", "89", "56", "17", "35", "27"]);
+function subCost(x, y) { if (x === y) return 0; return SIMILAR.has(x < y ? x + y : y + x) ? 0.6 : 1; }
+function indelCost(ch) { return ch === "0" ? 0.6 : 1; }
+function lev(a, b) {
+  const d = Array.from({ length: a.length + 1 }, () => new Array(b.length + 1).fill(0));
+  for (let i = 1; i <= a.length; i++) d[i][0] = d[i - 1][0] + indelCost(a[i - 1]);
+  for (let j = 1; j <= b.length; j++) d[0][j] = d[0][j - 1] + indelCost(b[j - 1]);
+  for (let i = 1; i <= a.length; i++) for (let j = 1; j <= b.length; j++)
+    d[i][j] = Math.min(d[i - 1][j] + indelCost(a[i - 1]), d[i][j - 1] + indelCost(b[j - 1]), d[i - 1][j - 1] + subCost(a[i - 1], b[j - 1]));
+  return d[a.length][b.length];
+}
+const digitsOf = s => String(s || "").replace(/[^0-9]/g, "");
+const fmtDec = v => { const h = Math.floor(v + 1e-9), m = Math.round((v - h) * 100); return `${h}.${String(m).padStart(2, "0")}`; };
+const QUARTERS = [0, 0.25, 0.5, 0.75];
+const TIME_CANDS = [], ACT_CANDS = [], BRK_CANDS = [0];
+for (let h = 0; h <= 29; h++) for (const q of QUARTERS) TIME_CANDS.push(h + q);
+for (let v = 0.25; v <= 16 + 1e-9; v += 0.25) ACT_CANDS.push(v);
+for (let v = 0.25; v <= 3 + 1e-9; v += 0.25) BRK_CANDS.push(v);
+const UNKNOWN = 2.2;   // 空欄（読めなかった）マスのコスト
+// str は文字列、または同じマスを別の前処理で読んだ文字列の配列（一番合うものを使う）
+function cellCost(str, v, kind) {
+  if (Array.isArray(str)) {
+    const alts = str.filter(x => digitsOf(x));
+    if (!alts.length) return cellCost("", v, kind);
+    return Math.min(...alts.map(x => cellCost(x, v, kind)));
+  }
+  const d = digitsOf(str);
+  if (kind === "brk" && !d) return v === 0 ? 0 : 3;
+  if (!d) return UNKNOWN;
+  let c = lev(d, digitsOf(fmtDec(v)));
+  if (kind !== "act" && (v % 0.5) !== 0) c += 0.3;   // ◯.25 / ◯.75 は少ないので少し下げる
+  return c;
+}
+// strs = [出, 退, 休, 実] の読み取り結果 → {start, end, brk, act, cost} または null（勤務なし）
+// favorites: Map("17.5-21.5" → ボーナス値) よく出る時間帯を少し優先する
+function decodeRow(strs, favorites) {
+  const longest = x => Array.isArray(x) ? x.map(digitsOf).sort((p, q) => q.length - p.length)[0] || "" : digitsOf(x);
+  const [s, e, b, a] = strs.map(longest);
+  // ノイズ対策：出・退・実のうち2マス以上に2桁以上の数字があるときだけ勤務とみなす
+  const filled = [s, e, a].filter(x => x.length >= 2).length;
+  if (filled < 2) return filled === 1 && (s.length >= 3 || e.length >= 3) ? { unsure: true, raw: strs } : null;
+  const cs = TIME_CANDS.map(v => cellCost(strs[0], v, "t"));
+  const ce = TIME_CANDS.map(v => cellCost(strs[1], v, "t"));
+  const cb = BRK_CANDS.map(v => cellCost(strs[2], v, "brk"));
+  const ca = new Map(ACT_CANDS.map(v => [v.toFixed(2), cellCost(strs[3], v, "act")]));
+  let best = null;
+  for (let i = 0; i < TIME_CANDS.length; i++) for (let j = 0; j < TIME_CANDS.length; j++) {
+    const st = TIME_CANDS[i], en = TIME_CANDS[j];
+    let span = en - st; if (span <= 0) span += 24;
+    if (span > 16) continue;
+    const fav = favorites ? (favorites.get(`${st}-${en}`) || 0) : 0;
+    // ありえにくい形（深夜〜早朝の開始、日またぎ、長すぎる勤務）は少し不利にする
+    const odd = (st < 5 ? 1 : 0) + (en <= st ? 1.5 : 0) + (span > 12 ? 1 : 0);
+    const base = cs[i] + ce[j] + odd - fav;
+    if (best && base >= best.cost) continue;
+    for (let k = 0; k < BRK_CANDS.length; k++) {
+      const act = span - BRK_CANDS[k];
+      if (act <= 0) continue;
+      const c = base + cb[k] + (ca.get(act.toFixed(2)) ?? 9);
+      if (!best || c < best.cost) best = { start: st, end: en, brk: BRK_CANDS[k], act, cost: c };
+    }
+  }
+  return best;
+}
+// 全行をまとめて直す：1回目で自信のある行から「よく出る時間帯」を集め、2回目でそれを優先する
+// rows: 各行の [出,退,休,実] 文字列の配列。extraFav: ["17:30-21:30"...] の形の過去の時間帯（任意）
+function decodeAll(rows, extraFav = []) {
+  const first = rows.map(r => decodeRow(r));
+  const count = new Map();
+  const add = k => count.set(k, (count.get(k) || 0) + 1);
+  first.forEach(r => { if (r && !r.unsure && r.cost <= 0.6) add(`${r.start}-${r.end}`); });
+  extraFav.forEach(add);
+  const fav = new Map([...count].map(([k, n]) => [k, Math.min(1.2, 0.5 + 0.25 * n)]));
+  return rows.map((r, i) => {
+    const d = decodeRow(r, fav);
+    if (d && !d.unsure) { const f = fav.get(`${d.start}-${d.end}`) || 0; d.cost += f; }  // 表示用のコストはボーナス抜き
+    return d;
+  });
+}
+// 小数の時間（17.5）→ "17:30"（24時以降は翌日の時刻）
+function decToHHMM(v) { const h = Math.floor(v + 1e-9), m = Math.round((v - h) * 60); return `${String(h % 24).padStart(2, "0")}:${String(m).padStart(2, "0")}`; }
+
+if (typeof module !== "undefined") module.exports = { snapQuad, homography, applyH, orderQuad, warpGray, prepareGrid, extractRow, thicken, decodeRow, decodeAll, decToHHMM, fmtDec };
+
+</script>
+<script>
+"use strict";
+/* =========================================================
+   データと保存
+   ========================================================= */
+const STORE_KEY = "shiftcalendar.v2";
+const WD = ["日", "月", "火", "水", "木", "金", "土"];
+const COLS = 4;   // 出・退・休・実
+const TESS_URL = "https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js";
+const HEIC_URL = "https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js";
+const today = new Date();
+
+const state = {
+  year: today.getFullYear(),
+  month: today.getMonth() + 1,
+  selected: null,
+  shifts: {},       // "YYYY-MM-DD": {start, end, brk(分), read, warn, raw}
+  presets: [{ start: "17:30", end: "21:30" }, { start: "17:00", end: "21:30" }, { start: "08:00", end: "12:00" }],
+  title: "バイト",
+  location: "",
+  alarm: 60,
+  lastQuad: null,   // 前回の四隅（画像サイズに対する割合）
+  wage: 0,          // 時給（円）
+  nightRate: true,  // 深夜手当（22〜翌5時 25%増し）
+  fare: 0,          // 交通費（円 / 日）
+};
+
+function load() {
+  try { const raw = localStorage.getItem(STORE_KEY); if (raw) Object.assign(state, JSON.parse(raw)); } catch (e) {}
+  state.tomb = state.tomb || {};
+  state.sync = state.sync || {};
+  lastSnap = makeSnap();
+  const n = new Date(today.getFullYear(), today.getMonth() + 1, 1);   // シフト表はふつう翌月分
+  state.year = n.getFullYear(); state.month = n.getMonth() + 1;
+  state.selected = key(state.year, state.month, 1);
+}
+function persist() {
+  try { const { selected, ...rest } = state; localStorage.setItem(STORE_KEY, JSON.stringify(rest)); } catch (e) {}
+}
+function save() { stamp(); persist(); scheduleSync(); }
+
+// ---- 同期用：どの日がいつ変わったかを記録する ----
+const SETTING_KEYS = ["presets", "title", "location", "alarm", "wage", "nightRate", "fare", "lastQuad"];
+let lastSnap = null;
+const stripU = o => { const { u, ...rest } = o; return JSON.stringify(rest); };
+function settingsOf(st) { const o = {}; SETTING_KEYS.forEach(k => o[k] = st[k]); return o; }
+function makeSnap() {
+  const sh = {};
+  for (const [k, v] of Object.entries(state.shifts)) sh[k] = { j: stripU(v), u: v.u || 0 };
+  return { shifts: sh, set: JSON.stringify(settingsOf(state)) };
+}
+function stamp() {
+  const now = Date.now(), snap = lastSnap || { shifts: {}, set: "" };
+  for (const [k, v] of Object.entries(state.shifts)) {
+    const old = snap.shifts[k];
+    if (!old || old.j !== stripU(v)) { v.u = now; delete state.tomb[k]; }
+    else if (!v.u) v.u = old.u;
+  }
+  for (const k of Object.keys(snap.shifts)) if (!state.shifts[k]) state.tomb[k] = now;
+  if (JSON.stringify(settingsOf(state)) !== snap.set) state.settingsU = now;
+  lastSnap = makeSnap();
+}
+
+/* =========================================================
+   時刻・日付
+   ========================================================= */
+const pad = n => String(n).padStart(2, "0");
+function key(y, m, d) { return `${y}-${pad(m)}-${pad(d)}`; }
+function parseKey(k) { const [y, m, d] = k.split("-").map(Number); return { y, m, d }; }
+function daysInMonth(y, m) { return new Date(y, m, 0).getDate(); }
+function toHalf(s) { return s.replace(/[０-９：－〜～．]/g, c => ({ "：": ":", "－": "-", "〜": "-", "～": "-", "．": "." }[c] || String.fromCharCode(c.charCodeAt(0) - 0xFEE0))); }
+
+// "10" "10:30" "1030" "17.50"(=17:30) "10時半" → "HH:MM"
+function parseTime(s) {
+  s = toHalf(String(s)).trim().replace(/時半/, ":30").replace(/時/, ":").replace(/分/, "");
+  if (s.endsWith(":")) s += "00";
+  let h, m, r;
+  if ((r = s.match(/^(\d{1,2})\.(\d{1,2})$/))) { h = +r[1]; m = Math.round(parseFloat("0." + r[2]) * 60); }   // シフト表の小数表記
+  else if ((r = s.match(/^(\d{1,2}):(\d{2})$/))) { h = +r[1]; m = +r[2]; }
+  else if ((r = s.match(/^(\d{1,2})(\d{2})$/))) { h = +r[1]; m = +r[2]; }
+  else if ((r = s.match(/^(\d{1,2})$/))) { h = +r[1]; m = 0; }
+  else return null;
+  if (h > 30 || m > 59) return null;
+  return `${pad(h % 24)}:${pad(m)}`;
+}
+function minutes(t) { const [h, m] = t.split(":").map(Number); return h * 60 + m; }
+function overnight(s) { return minutes(s.end) <= minutes(s.start); }
+function span(s) { let d = minutes(s.end) - minutes(s.start); if (d <= 0) d += 1440; return d; }
+function workMin(s) { return Math.max(0, span(s) - (s.brk || 0)); }
+function fmtHours(min) { return (Math.round(min / 60 * 100) / 100).toFixed(2); }
+
+function parseLine(line) {
+  line = toHalf(line).trim();
+  if (!line) return null;
+  const r = line.match(/^(?:(\d{1,2})\s*[\/月]\s*)?(\d{1,2})\s*日?[\s　,、]+(.+?)\s*-\s*(.+)$/);
+  if (!r) return { error: true };
+  const start = parseTime(r[3]), end = parseTime(r[4]);
+  if (!start || !end) return { error: true };
+  return { month: r[1] ? +r[1] : null, day: +r[2], start, end };
+}
+
+/* =========================================================
+   お給料の計算
+   ========================================================= */
+// 1日分：{ min: 実働分, night: 深夜の分, yen: 額面（交通費なし） }
+function payOf(s) {
+  if (!s) return { min: 0, night: 0, yen: 0 };
+  const total = workMin(s);
+  let st = minutes(s.start), en = minutes(s.end); if (en <= st) en += 1440;
+  let night = 0;
+  for (const [a, b] of [[0, 300], [1320, 1740], [2760, 3180]]) night += Math.max(0, Math.min(en, b) - Math.max(st, a));
+  night = Math.min(night, total);   // 休憩は深夜以外の時間に取ったとみなす
+  const w = state.wage || 0;
+  const yen = (total - night) / 60 * w + night / 60 * w * (state.nightRate ? 1.25 : 1);
+  return { min: total, night, yen };
+}
+function yen(n) { return "¥" + Math.floor(n).toLocaleString("ja-JP"); }
+function monthPay(y, m) {
+  const ent = monthEntries(y, m);
+  const fare = state.fare || 0;
+  const r = { plan: 0, planMin: 0, planDays: 0, act: 0, actMin: 0, actDays: 0, mix: 0, mixMin: 0, night: 0, todo: 0 };
+  const tKey = key(today.getFullYear(), today.getMonth() + 1, today.getDate());
+  for (const [k, s] of ent) {
+    const p = payOf(s);
+    r.plan += p.yen + fare; r.planMin += p.min; r.planDays++;
+    if (s.act) {
+      const a = payOf(s.act);
+      r.act += a.yen + fare; r.actMin += a.min; r.actDays++;
+      r.mix += a.yen + fare; r.mixMin += a.min; r.night += a.night;
+    } else {
+      r.mix += p.yen + fare; r.mixMin += p.min; r.night += p.night;
+      if (k < tKey) r.todo++;
+    }
+  }
+  return r;
+}
+function renderPay() {
+  const { year: y, month: m } = state;
+  $("payTitle").textContent = `${m}月のお給料（額面）`;
+  const has = (state.wage || 0) > 0;
+  const r = monthPay(y, m);
+  $("payNoWage").hidden = has; $("payBody").hidden = !has;
+  $("fillActual").hidden = !r.todo;
+  if (!has) { $("paySettings").open = true; return; }
+  $("payMix").textContent = yen(r.mix);
+  $("payPlan").textContent = yen(r.plan);
+  $("payAct").textContent = r.actDays ? yen(r.act) : "−";
+  $("payActLabel").textContent = `実績（入力済み ${r.actDays} / ${r.planDays} 日）`;
+  const diff = r.mix - r.plan;
+  $("payDetail").innerHTML =
+    `時間：予定 <b class="num">${fmtHours(r.planMin)}</b>h ／ 着地予想 <b class="num">${fmtHours(r.mixMin)}</b>h` +
+    (Math.abs(diff) >= 1 ? ` ／ 予定との差 <b class="num ${diff > 0 ? "diff-plus" : "diff-minus"}">${diff > 0 ? "+" : "−"}${yen(Math.abs(diff)).slice(1)}円</b>` : "") +
+    (r.night ? `<br>深夜時間 ${fmtHours(r.night)}h を含む` : "") +
+    (state.fare ? `<br>交通費 ${yen(state.fare * r.planDays)}（${r.planDays}日分）を含む` : "") +
+    (r.todo ? `<br><span style="color:var(--warn)">過ぎた日で実績が未入力：${r.todo}日</span>` : "");
+}
+
+/* =========================================================
+   .ics
+   ========================================================= */
+function utcStamp(y, m, d, hhmm, addDays) {
+  const [hh, mm] = hhmm.split(":").map(Number);
+  return new Date(Date.UTC(y, m - 1, d + addDays, hh - 9, mm)).toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "");
+}
+function icsEscape(s) { return String(s).replace(/\\/g, "\\\\").replace(/;/g, "\\;").replace(/,/g, "\\,").replace(/\r?\n/g, "\\n"); }
+function fold(line) {
+  const enc = new TextEncoder(); const out = []; let cur = "", bytes = 0;
+  for (const ch of line) { const b = enc.encode(ch).length; if (bytes + b > 75) { out.push(cur); cur = " "; bytes = 1; } cur += ch; bytes += b; }
+  out.push(cur); return out.join("\r\n");
+}
+function buildIcs(entries, opt) {
+  const now = new Date().toISOString().replace(/[-:]/g, "").replace(/\.\d{3}/, "");
+  const seq = Math.floor(Date.now() / 1000);   // 取り込み直したとき新しい方が優先されるように
+  const L = ["BEGIN:VCALENDAR", "VERSION:2.0", "PRODID:-//ShiftCalendar//JA", "CALSCALE:GREGORIAN", "METHOD:PUBLISH"];
+  if (opt.feed) L.push(`X-WR-CALNAME:${icsEscape(opt.title || "バイト")}`, "X-WR-TIMEZONE:Asia/Tokyo", "REFRESH-INTERVAL;VALUE=DURATION:PT1H", "X-PUBLISHED-TTL:PT1H");
+  for (const [k, s] of entries) {
+    const { y, m, d } = parseKey(k);
+    const title = opt.title || "バイト";
+    L.push("BEGIN:VEVENT",
+      `UID:shift-${y}${pad(m)}${pad(d)}@shiftcalendar.local`,
+      `SEQUENCE:${seq}`,
+      `DTSTAMP:${now}`,
+      `LAST-MODIFIED:${now}`,
+      `DTSTART:${utcStamp(y, m, d, s.start, 0)}`,
+      `DTEND:${utcStamp(y, m, d, s.end, overnight(s) ? 1 : 0)}`,
+      `SUMMARY:${icsEscape(title)}`);
+    if (opt.location) L.push(`LOCATION:${icsEscape(opt.location)}`);
+    L.push(`DESCRIPTION:${icsEscape(`${s.start}〜${s.end}${s.brk ? `（休憩${s.brk}分）` : ""} 実働${fmtHours(workMin(s))}時間`)}`);
+    if (opt.alarm > 0) L.push("BEGIN:VALARM", "ACTION:DISPLAY", `DESCRIPTION:${icsEscape(title)}`, `TRIGGER:-PT${Math.round(opt.alarm)}M`, "END:VALARM");
+    L.push("END:VEVENT");
+  }
+  L.push("END:VCALENDAR");
+  return L.map(fold).join("\r\n") + "\r\n";
+}
+
+/* =========================================================
+   カレンダー
+   ========================================================= */
+const $ = id => document.getElementById(id);
+function monthEntries(y, m) {
+  const prefix = `${y}-${pad(m)}-`;
+  return Object.entries(state.shifts).filter(([k]) => k.startsWith(prefix)).sort(([a], [b]) => a.localeCompare(b));
+}
+
+function render() {
+  const { year: y, month: m } = state;
+  $("monthTitle").textContent = `${y}年${m}月`;
+  const cal = $("cal");
+  cal.innerHTML = "";
+  WD.forEach((w, i) => { const el = document.createElement("div"); el.className = "dow" + (i === 0 ? " sun" : i === 6 ? " sat" : ""); el.textContent = w; cal.appendChild(el); });
+  const first = new Date(y, m - 1, 1).getDay();
+  for (let i = 0; i < first; i++) { const b = document.createElement("div"); b.className = "day blank"; cal.appendChild(b); }
+  const tKey = key(today.getFullYear(), today.getMonth() + 1, today.getDate());
+  for (let d = 1; d <= daysInMonth(y, m); d++) {
+    const k = key(y, m, d), wd = (first + d - 1) % 7, s = state.shifts[k];
+    const el = document.createElement("button");
+    el.type = "button";
+    el.className = "day" + (wd === 0 ? " sun" : wd === 6 ? " sat" : "") + (s ? " has" : "") + (s && s.read ? " read" : "") + (s && s.warn ? " warn" : "") + (k === state.selected ? " sel" : "") + (k === tKey ? " today" : "");
+    el.dataset.k = k;
+    const mark = s && s.warn ? '<span class="tag">要確認</span>' : s && s.act ? '<span class="ok">✓実績</span>' : s && k < tKey ? '<span class="todo">実績未</span>' : "";
+    el.innerHTML = `<span class="d"><span>${d}</span>${mark}</span>` +
+      (s ? `<span class="t">${s.start}</span><span class="t">${overnight(s) ? "翌" : ""}${s.end}</span>` : "");
+    el.addEventListener("click", () => select(k, false));
+    cal.appendChild(el);
+  }
+  const ent = monthEntries(y, m);
+  const total = ent.reduce((a, [, s]) => a + workMin(s), 0);
+  const warns = ent.filter(([, s]) => s.warn).length;
+  $("summary").innerHTML = `勤務 <b class="num">${ent.length}</b> 日 ・ 実働合計 <b class="num">${fmtHours(total)}</b> 時間` + (warns ? ` ・ <span style="color:var(--warn)">要確認 ${warns}日</span>` : "");
+
+  const list = $("list");
+  list.innerHTML = ent.length ? "" : `<tr><td class="small">まだありません。写真から読み取るか、日付を選んで入力してください。</td></tr>`;
+  for (const [k, s] of ent) {
+    const { d } = parseKey(k);
+    const tr = document.createElement("tr");
+    if (s.warn) tr.className = "warn";
+    const a = s.act;
+    const shown = a || s;
+    tr.innerHTML = `<td class="num">${m}/${d}（${WD[new Date(y, m - 1, d).getDay()]}）</td>` +
+      `<td class="num">${s.start}〜${overnight(s) ? "翌" : ""}${s.end}${a && (a.start !== s.start || a.end !== s.end) ? `<br><span class="small">実際 ${a.start}〜${a.end}</span>` : ""}</td>` +
+      `<td class="num r">${fmtHours(workMin(shown))}h${s.warn ? " ⚠" : ""}${a ? " ✓" : ""}${state.wage ? `<br><span class="small">${yen(payOf(shown).yen + (state.fare || 0))}</span>` : ""}</td>`;
+    tr.style.cursor = "pointer";
+    tr.addEventListener("click", () => select(k, false));
+    list.appendChild(tr);
+  }
+  renderPay();
+  $("rdTarget").textContent = `対象：${y}年${m}月（${daysInMonth(y, m)}行）※月はカレンダーの ◀ ▶ で切り替え`;
+  renderEditor();
+  renderPresets();
+  drawOverlay();
+}
+
+function renderEditor() {
+  const k = state.selected; if (!k) return;
+  const { y, m, d } = parseKey(k);
+  $("edDate").textContent = `${m}月${d}日（${WD[new Date(y, m - 1, d).getDay()]}）`;
+  const s = state.shifts[k];
+  $("edStart").value = s ? s.start : "";
+  $("edEnd").value = s ? s.end : "";
+  $("edBrk").value = s && s.brk ? s.brk : "";
+  const a = s && s.act;
+  $("actStart").value = a ? a.start : "";
+  $("actEnd").value = a ? a.end : "";
+  $("actBrk").value = a && a.brk ? a.brk : "";
+  $("actBox").hidden = !s;
+  if (s) {
+    const tKey = key(today.getFullYear(), today.getMonth() + 1, today.getDate());
+    $("actNote").innerHTML = a
+      ? `実績 ${fmtHours(workMin(a))}時間` + (state.wage ? ` ・ ${yen(payOf(a).yen + (state.fare || 0))}` : "") +
+        (workMin(a) !== workMin(s) ? `（予定より${workMin(a) > workMin(s) ? "+" : "−"}${Math.abs(workMin(a) - workMin(s))}分）` : "（予定どおり）")
+      : (k < tKey ? "まだ入力されていません。予定どおりなら「予定どおり」→「実績を保存」。" : "働いた後に入力してください。");
+  }
+  const note = $("edNote");
+  if (!s) { note.textContent = "未登録（休み）"; return; }
+  const base = `実働 ${fmtHours(workMin(s))}時間${overnight(s) ? " ・ 翌日まで" : ""}${state.wage ? ` ・ 見込み ${yen(payOf(s).yen + (state.fare || 0))}` : ""}`;
+  if (s.read) {
+    note.innerHTML = `${s.warn ? "<b style='color:var(--warn)'>読み取りに自信がありません。</b>" : "写真から読み取りました。"}写真と見比べて、合っていれば「登録」で確定。<br>${base}` +
+      (s.raw ? `<br><span class="raw">文字認識の結果：${s.raw}</span>` : "");
+  } else note.textContent = `登録済み ・ ${base}`;
+}
+
+function renderPresets() {
+  const box = $("presets"); box.innerHTML = "";
+  state.presets.forEach((p, i) => {
+    const chip = document.createElement("span"); chip.className = "chip";
+    chip.innerHTML = `${i < 9 ? `<span class="key">${i + 1}</span>` : ""}<button class="apply" type="button">${p.start}〜${p.end}</button><button type="button" aria-label="削除" title="削除">×</button>`;
+    chip.querySelector(".apply").addEventListener("click", () => applyPreset(i));
+    chip.lastElementChild.addEventListener("click", () => { state.presets.splice(i, 1); save(); renderPresets(); });
+    box.appendChild(chip);
+  });
+}
+
+/* =========================================================
+   入力操作
+   ========================================================= */
+function select(k, focusCell = true, zoomIn = false) {
+  const { y, m } = parseKey(k);
+  state.selected = k; state.year = y; state.month = m;
+  render();
+  revealRow(zoomIn);
+  if (focusCell) document.querySelector(`.day[data-k="${k}"]`)?.focus();
+}
+// 選んだ日の行が写真の画面外なら、見える位置までスクロールする（zoomIn なら小さすぎるとき拡大も）
+function revealRow(zoomIn) {
+  if (!img.naturalWidth || corners.length !== 4 || !state.selected) return;
+  const { d } = parseKey(state.selected);
+  const rows = daysInMonth(state.year, state.month);
+  const h = homography([[0, 0], [COLS, 0], [COLS, rows], [0, rows]], orderQuad(corners));
+  const [cx, cy] = applyH(h, COLS / 2, d - 0.5);
+  const [ax, ay] = applyH(h, 0, 0), [bx, by] = applyH(h, 0, rows);
+  const rowImg = Math.hypot(bx - ax, by - ay) / rows;
+  const W = stage.clientWidth, H = stage.clientHeight;
+  if (zoomIn && rowImg * view.s < 22) {
+    const p = matrix().transformPoint({ x: cx, y: cy });
+    zoomAt(26 / (rowImg * view.s), p.x, p.y);
+  }
+  const p = matrix().transformPoint({ x: cx, y: cy });
+  const margin = 60;
+  if (zoomIn || p.x < margin || p.x > W - margin || p.y < margin || p.y > H - margin) {
+    view.tx += W / 2 - p.x; view.ty += H / 2 - p.y; applyView();
+  }
+}
+function moveSel(days) {
+  const { y, m, d } = parseKey(state.selected);
+  const n = new Date(y, m - 1, d + days);
+  select(key(n.getFullYear(), n.getMonth() + 1, n.getDate()));
+}
+function setShift(k, start, end, brk = 0) {
+  const prev = state.shifts[k];
+  if (start && end && start !== end) {
+    state.shifts[k] = { start, end, brk: brk || 0 };
+    if (prev && prev.act) state.shifts[k].act = prev.act;   // 予定を直しても実績は残す
+  } else delete state.shifts[k];
+  save();
+}
+function applyPreset(i) {
+  const p = state.presets[i]; if (!p || !state.selected) return;
+  setShift(state.selected, p.start, p.end, p.brk || 0); moveSel(1);
+}
+function toast(msg) {
+  const t = $("toast"); t.textContent = msg; t.classList.add("show");
+  clearTimeout(toast._t); toast._t = setTimeout(() => t.classList.remove("show"), 2600);
+}
+function download(name, text, type) {
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([text], { type })); a.download = name;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+
+$("prevM").onclick = () => { const n = new Date(state.year, state.month - 2, 1); select(key(n.getFullYear(), n.getMonth() + 1, 1), false); };
+$("nextM").onclick = () => { const n = new Date(state.year, state.month, 1); select(key(n.getFullYear(), n.getMonth() + 1, 1), false); };
+$("edSave").onclick = () => {
+  const s = $("edStart").value, e = $("edEnd").value, b = Math.max(0, +$("edBrk").value || 0);
+  if (!s || !e) { toast("出勤と退勤の時刻を入れてください"); return; }
+  if (s === e) { toast("出勤と退勤が同じ時刻です"); return; }
+  setShift(state.selected, s, e, b); moveSel(1);
+};
+$("edDel").onclick = () => { setShift(state.selected, null, null); render(); };
+[$("edStart"), $("edEnd"), $("edBrk")].forEach(inp => inp.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); $("edSave").click(); } }));
+$("addPreset").onclick = () => {
+  const s = $("edStart").value, e = $("edEnd").value;
+  if (!s || !e || s === e) { toast("先に出勤と退勤の時刻を入れてください"); return; }
+  if (state.presets.some(p => p.start === s && p.end === e)) { toast("もう追加されています"); return; }
+  state.presets.push({ start: s, end: e, brk: Math.max(0, +$("edBrk").value || 0) }); save(); renderPresets();
+  toast(`${s}〜${e} を追加しました`);
+};
+$("bulkApply").onclick = () => {
+  let ok = 0; const bad = [];
+  $("bulk").value.split(/\r?\n/).forEach((ln, i) => {
+    const r = parseLine(ln); if (!r) return;
+    const m = r.month || state.month;
+    if (r.error || m < 1 || m > 12 || r.day < 1 || r.day > daysInMonth(state.year, m)) { bad.push(i + 1); return; }
+    setShift(key(state.year, m, r.day), r.start, r.end); ok++;
+  });
+  render();
+  toast(`${ok}件を反映しました` + (bad.length ? `（${bad.join("・")}行目は読み取れませんでした）` : ""));
+};
+$("actSame").onclick = () => {
+  const s = state.shifts[state.selected]; if (!s) return;
+  $("actStart").value = s.start; $("actEnd").value = s.end; $("actBrk").value = s.brk || "";
+};
+$("actSave").onclick = () => {
+  const s = state.shifts[state.selected]; if (!s) return;
+  const st = $("actStart").value, en = $("actEnd").value, b = Math.max(0, +$("actBrk").value || 0);
+  if (!st || !en || st === en) { toast("実際の出勤・退勤の時刻を入れてください"); return; }
+  s.act = { start: st, end: en, brk: b }; save(); render();
+  toast("実績を保存しました");
+};
+$("actDel").onclick = () => { const s = state.shifts[state.selected]; if (!s) return; delete s.act; save(); render(); };
+[$("actStart"), $("actEnd"), $("actBrk")].forEach(inp => inp.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); $("actSave").click(); } }));
+$("fillActual").onclick = () => {
+  const tKey = key(today.getFullYear(), today.getMonth() + 1, today.getDate());
+  let n = 0;
+  for (const [k, s] of monthEntries(state.year, state.month)) if (!s.act && k < tKey) { s.act = { start: s.start, end: s.end, brk: s.brk || 0 }; n++; }
+  save(); render(); toast(`${n}日分を予定どおりで実績入力しました。違う日だけ直してください`);
+};
+$("wage").addEventListener("input", e => { state.wage = Math.max(0, +e.target.value || 0); save(); render(); });
+$("fare").addEventListener("input", e => { state.fare = Math.max(0, +e.target.value || 0); save(); render(); });
+$("nightRate").addEventListener("change", e => { state.nightRate = e.target.checked; save(); render(); });
+$("evTitle").addEventListener("input", e => { state.title = e.target.value; save(); });
+$("evLoc").addEventListener("input", e => { state.location = e.target.value; save(); });
+$("evAlarm").addEventListener("input", e => { state.alarm = Math.max(0, +e.target.value || 0); save(); });
+
+function exportEntries() {
+  return $("onlyMonth").checked ? monthEntries(state.year, state.month) : Object.entries(state.shifts).sort(([a], [b]) => a.localeCompare(b));
+}
+$("exportIcs").onclick = () => {
+  const ent = exportEntries();
+  if (!ent.length) { toast("書き出すシフトがありません"); return; }
+  const warns = ent.filter(([, s]) => s.warn).length;
+  const name = $("onlyMonth").checked ? `shift_${state.year}-${pad(state.month)}.ics` : "shift_all.ics";
+  download(name, buildIcs(ent, state), "text/calendar;charset=utf-8");
+  toast(`${ent.length}件を ${name} に書き出しました` + (warns ? `（要確認が${warns}日残っています）` : ""));
+};
+$("exportCsv").onclick = () => {
+  const ent = exportEntries();
+  if (!ent.length) { toast("書き出すシフトがありません"); return; }
+  const rows = [["日付", "曜日", "予定出勤", "予定退勤", "予定休憩(分)", "予定実働(時間)", "実際の出勤", "実際の退勤", "実際の休憩(分)", "実際の実働(時間)", "給料(交通費込み)"]];
+  for (const [k, s] of ent) {
+    const { y, m, d } = parseKey(k);
+    const a = s.act;
+    rows.push([k, WD[new Date(y, m - 1, d).getDay()], s.start, (overnight(s) ? "翌" : "") + s.end, s.brk || 0, fmtHours(workMin(s)),
+      a ? a.start : "", a ? (overnight(a) ? "翌" : "") + a.end : "", a ? a.brk || 0 : "", a ? fmtHours(workMin(a)) : "",
+      state.wage ? Math.floor(payOf(a || s).yen + (state.fare || 0)) : ""]);
+  }
+  download(`shift_${state.year}-${pad(state.month)}.csv`, "\uFEFF" + rows.map(r => r.join(",")).join("\r\n"), "text/csv;charset=utf-8");
+};
+
+document.addEventListener("keydown", e => {
+  const tag = (e.target.tagName || "").toLowerCase();
+  if (tag === "input" || tag === "textarea" || e.ctrlKey || e.metaKey || e.altKey || !state.selected) return;
+  if (/^[1-9]$/.test(e.key)) { e.preventDefault(); applyPreset(+e.key - 1); }
+  else if (e.key === " ") { e.preventDefault(); setShift(state.selected, null, null); moveSel(1); }
+  else if (e.key === "Delete" || e.key === "Backspace") { e.preventDefault(); setShift(state.selected, null, null); render(); document.querySelector(`.day[data-k="${state.selected}"]`)?.focus(); }
+  else if (e.key === "ArrowRight") { e.preventDefault(); moveSel(1); }
+  else if (e.key === "ArrowLeft") { e.preventDefault(); moveSel(-1); }
+  else if (e.key === "ArrowDown") { e.preventDefault(); moveSel(7); }
+  else if (e.key === "ArrowUp") { e.preventDefault(); moveSel(-7); }
+  else if (e.key === "Enter" && e.target.classList?.contains("day")) { e.preventDefault(); $("edStart").focus(); }
+});
+
+/* =========================================================
+   写真ビューア（拡大・移動・回転・四隅の指定）
+   ========================================================= */
+const stage = $("stage"), layer = $("layer"), img = $("img"), svg = $("overlay");
+const view = { s: 1, tx: 0, ty: 0, rot: 0 };
+let corners = [];   // 画像の座標 [[x,y], ...]（最大4点）
+
+const STEP_TEXT = [
+  "自分の列の「出」のマスで、1日の行の<b>左上の角</b>をクリック（見出しのすぐ下）",
+  "同じ1日の行で、「実」のマスの<b>右上の角</b>をクリック",
+  "最終日の行で、「実」のマスの<b>右下の角</b>をクリック",
+  "最終日の行で、「出」のマスの<b>左下の角</b>をクリック",
+];
+function setStep() {
+  const badge = $("stepBadge"), text = $("stepText");
+  if (!img.naturalWidth) { badge.textContent = "1"; text.textContent = "シフト表の写真を開いてください。"; return; }
+  if (corners.length < 4) { badge.textContent = `${corners.length + 1}/4`; text.innerHTML = STEP_TEXT[corners.length] + "。ホイールで拡大できます。"; }
+  else { badge.textContent = "OK"; text.innerHTML = "黄色のマス目が表のマスと重なるよう、<b>角の丸をドラッグ</b>して合わせてください。合ったら右の「読み取る」へ。読み取り後は、行をクリックするとその日を選べます。"; }
+  $("rdRun").disabled = corners.length < 4;
+}
+
+function matrix() { return new DOMMatrix().translate(view.tx, view.ty).rotate(view.rot).scale(view.s); }
+function applyView() { layer.style.transform = matrix().toString(); drawOverlay(); }
+function fit() {
+  if (!img.naturalWidth) return;
+  const W = stage.clientWidth, H = stage.clientHeight, w = img.naturalWidth, h = img.naturalHeight;
+  const R = new DOMMatrix().rotate(view.rot);
+  const pts = [[0, 0], [w, 0], [0, h], [w, h]].map(([x, y]) => R.transformPoint({ x, y }));
+  const xs = pts.map(p => p.x), ys = pts.map(p => p.y);
+  const minx = Math.min(...xs), miny = Math.min(...ys), bw = Math.max(...xs) - minx, bh = Math.max(...ys) - miny;
+  view.s = Math.min(W / bw, H / bh) * 0.96;
+  view.tx = (W - view.s * bw) / 2 - view.s * minx;
+  view.ty = (H - view.s * bh) / 2 - view.s * miny;
+  applyView();
+}
+function zoomAt(f, cx, cy) {
+  const ns = Math.min(30, Math.max(0.03, view.s * f));
+  const p = matrix().inverse().transformPoint({ x: cx, y: cy });
+  const q = new DOMMatrix().rotate(view.rot).scale(ns).transformPoint(p);
+  view.s = ns; view.tx = cx - q.x; view.ty = cy - q.y; applyView();
+}
+function toImage(e) {
+  const r = stage.getBoundingClientRect();
+  const p = matrix().inverse().transformPoint({ x: e.clientX - r.left, y: e.clientY - r.top });
+  return [p.x, p.y];
+}
+
+// マス目（出・退・休・実 × 日数）を写真の上に描く
+function drawOverlay() {
+  if (!img.naturalWidth) { svg.innerHTML = ""; return; }
+  svg.setAttribute("width", img.naturalWidth); svg.setAttribute("height", img.naturalHeight);
+  const r = 9 / view.s, fs = 13 / view.s;
+  let out = "";
+  const Y = "#ffcf33";
+  if (corners.length === 4) {
+    const rows = daysInMonth(state.year, state.month);
+    const q = orderQuad(corners);
+    const h = homography([[0, 0], [COLS, 0], [COLS, rows], [0, rows]], q);
+    const P = (u, v) => applyH(h, u, v).map(n => n.toFixed(1)).join(",");
+    out += `<polygon points="${[[0, 0], [COLS, 0], [COLS, rows], [0, rows]].map(([u, v]) => P(u, v)).join(" ")}" fill="rgba(255,207,51,.08)" stroke="${Y}" stroke-width="2.5" vector-effect="non-scaling-stroke"/>`;
+    for (let i = 1; i < rows; i++) out += `<line x1="${P(0, i).split(",")[0]}" y1="${P(0, i).split(",")[1]}" x2="${P(COLS, i).split(",")[0]}" y2="${P(COLS, i).split(",")[1]}" stroke="${Y}" stroke-opacity=".75" stroke-width="1" vector-effect="non-scaling-stroke"/>`;
+    for (let c = 1; c < COLS; c++) out += `<line x1="${P(c, 0).split(",")[0]}" y1="${P(c, 0).split(",")[1]}" x2="${P(c, rows).split(",")[0]}" y2="${P(c, rows).split(",")[1]}" stroke="${Y}" stroke-opacity=".75" stroke-width="1" vector-effect="non-scaling-stroke"/>`;
+    ["出", "退", "休", "実"].forEach((t, c) => {
+      const [x, y] = applyH(h, c + 0.5, -0.6);
+      out += `<text x="${x}" y="${y}" font-size="${fs}" fill="${Y}" stroke="#000" stroke-width="${3 / view.s}" paint-order="stroke" text-anchor="middle" font-weight="700">${t}</text>`;
+    });
+    // 各行の左に日付と曜日（小さくて重なるときは5日おき）
+    const [ax, ay] = applyH(h, 0, 0), [bx, by] = applyH(h, 0, rows);
+    const rowScreen = Math.hypot(bx - ax, by - ay) / rows * view.s;
+    const lfs = Math.min(13, rowScreen * 0.85) / view.s;
+    const first = new Date(state.year, state.month - 1, 1).getDay();
+    for (let d = 1; d <= rows; d++) {
+      if (rowScreen < 8 && d !== 1 && d % 5 !== 0) continue;
+      const wd = (first + d - 1) % 7;
+      const col = wd === 0 ? "#ff8a80" : wd === 6 ? "#8ab4ff" : Y;
+      const [x, y] = applyH(h, -0.12, d - 0.5);
+      out += `<text x="${x}" y="${y}" font-size="${Math.max(lfs, 9 / view.s)}" fill="${col}" stroke="#000" stroke-width="${3 / view.s}" paint-order="stroke" text-anchor="end" dominant-baseline="middle" font-weight="700">${d}(${WD[wd]})</text>`;
+    }
+    // 選択中の日の行を青く光らせ、右側に日付と登録内容を出す
+    const sel = state.selected && parseKey(state.selected);
+    if (sel && sel.y === state.year && sel.m === state.month && sel.d <= rows) {
+      const i = sel.d;
+      const band = [[0, i - 1], [COLS, i - 1], [COLS, i], [0, i]].map(([u, v]) => P(u, v)).join(" ");
+      out += `<polygon points="${band}" fill="rgba(64,120,255,.30)" stroke="#4f8bff" stroke-width="2.5" vector-effect="non-scaling-stroke"/>`;
+      const s = state.shifts[state.selected];
+      const wd = (first + i - 1) % 7;
+      const label = `${sel.m}/${i}（${WD[wd]}）` + (s ? `  ${s.start}〜${s.end}${s.brk ? ` 休${s.brk}分` : ""}` : "  休み");
+      const [x, y] = applyH(h, COLS + 0.12, i - 0.5);
+      out += `<text x="${x}" y="${y}" font-size="${16 / view.s}" fill="${s && s.warn ? "#ffb26b" : "#fff"}" stroke="#0b1f4d" stroke-width="${7 / view.s}" stroke-linejoin="round" paint-order="stroke" dominant-baseline="middle" font-weight="700">${label}</text>`;
+    }
+  } else if (corners.length > 1) {
+    out += `<polyline points="${corners.map(p => p.join(",")).join(" ")}" fill="none" stroke="${Y}" stroke-width="2" stroke-dasharray="6 4" vector-effect="non-scaling-stroke"/>`;
+  }
+  corners.forEach(([x, y], i) => {
+    out += `<circle cx="${x}" cy="${y}" r="${r}" fill="rgba(255,207,51,.25)" stroke="${Y}" stroke-width="2" vector-effect="non-scaling-stroke"/>`;
+    out += `<circle cx="${x}" cy="${y}" r="${1.6 / view.s}" fill="#ff3b30"/>`;
+  });
+  svg.innerHTML = out;
+}
+
+function isHeic(file) { return /heic|heif/i.test(file.type) || /\.(heic|heif)$/i.test(file.name || ""); }
+function loadScript(src) { return new Promise((ok, ng) => { const s = document.createElement("script"); s.src = src; s.onload = ok; s.onerror = ng; document.head.appendChild(s); }); }
+async function loadImageFile(file) {
+  if (!file) return;
+  if (!((file.type || "").startsWith("image/") || /\.(png|jpe?g|gif|webp|bmp|heic|heif)$/i.test(file.name || ""))) { toast("画像ファイル（JPG・PNG など）を選んでください"); return; }
+  let blob = file;
+  if (isHeic(file)) {
+    toast("iPhoneの写真を変換しています…");
+    try { if (!window.heic2any) await loadScript(HEIC_URL); const out = await window.heic2any({ blob: file, toType: "image/jpeg", quality: 0.95 }); blob = Array.isArray(out) ? out[0] : out; }
+    catch (err) { toast("HEIC写真を変換できませんでした。JPGで保存し直してください"); return; }
+  }
+  img.onload = () => {
+    $("empty").hidden = true; view.rot = 0;
+    // 前回の位置があれば仮に置く（毎月ほぼ同じ撮り方なら、少し動かすだけで済む）
+    corners = state.lastQuad ? state.lastQuad.map(([u, v]) => [u * img.naturalWidth, v * img.naturalHeight]) : [];
+    fit(); setStep();
+    rdStatus(corners.length === 4 ? "前回の位置にマス目を仮に置きました。ずれていたら角をドラッグして合わせるか、「四隅をやり直す」を押してください。" : "自分の列の四隅を、左の写真でクリックしてください。");
+  };
+  img.onerror = () => toast("この画像は開けませんでした。JPG か PNG で試してください");
+  img.src = URL.createObjectURL(blob);
+}
+function rememberQuad() {
+  if (corners.length === 4) { state.lastQuad = orderQuad(corners).map(([x, y]) => [x / img.naturalWidth, y / img.naturalHeight]); save(); }
+}
+
+$("openBtn").onclick = () => $("fileInput").click();
+$("fileInput").onchange = e => { loadImageFile(e.target.files[0]); e.target.value = ""; };
+stage.addEventListener("dragover", e => { e.preventDefault(); stage.classList.add("drag"); });
+stage.addEventListener("dragleave", () => stage.classList.remove("drag"));
+stage.addEventListener("drop", e => { e.preventDefault(); stage.classList.remove("drag"); loadImageFile(e.dataTransfer.files[0]); });
+document.addEventListener("paste", e => {
+  const item = [...(e.clipboardData?.items || [])].find(i => i.type.startsWith("image/"));
+  if (item) { e.preventDefault(); loadImageFile(item.getAsFile()); }
+});
+$("zoomIn").onclick = () => zoomAt(1.3, stage.clientWidth / 2, stage.clientHeight / 2);
+$("zoomOut").onclick = () => zoomAt(1 / 1.3, stage.clientWidth / 2, stage.clientHeight / 2);
+$("fitBtn").onclick = fit;
+$("rotBtn").onclick = () => { if (!img.naturalWidth) return; view.rot = (view.rot + 90) % 360; fit(); };
+$("redoQuad").onclick = () => { corners = []; drawOverlay(); setStep(); rdStatus("自分の列の四隅を、左の写真でクリックしてください。"); };
+
+stage.addEventListener("wheel", e => {
+  if (!img.naturalWidth) return;
+  e.preventDefault();
+  const r = stage.getBoundingClientRect();
+  zoomAt(e.deltaY < 0 ? 1.15 : 1 / 1.15, e.clientX - r.left, e.clientY - r.top);
+}, { passive: false });
+
+let drag = null, pinch = null;
+const touches = new Map();
+function pinchInfo() {
+  const [a, b] = [...touches.values()];
+  const r = stage.getBoundingClientRect();
+  return { d: Math.hypot(a.x - b.x, a.y - b.y), mx: (a.x + b.x) / 2 - r.left, my: (a.y + b.y) / 2 - r.top };
+}
+stage.addEventListener("pointerdown", e => {
+  if (!img.naturalWidth) return;
+  touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  stage.setPointerCapture(e.pointerId);
+  if (touches.size === 2) {
+    // 2本指：ピンチで拡大・縮小と移動
+    const p = pinchInfo();
+    pinch = { d0: p.d, s0: view.s, pt: matrix().inverse().transformPoint({ x: p.mx, y: p.my }) };
+    drag = null; return;
+  }
+  if (touches.size > 2) return;
+  // 角の丸の近く（マウスは18px・指は32px以内）ならその角を動かす
+  const r = stage.getBoundingClientRect(), M = matrix();
+  let hit = -1, bestD = e.pointerType === "touch" ? 32 : 18;
+  corners.forEach(([x, y], i) => {
+    const p = M.transformPoint({ x, y });
+    const d = Math.hypot(p.x - (e.clientX - r.left), p.y - (e.clientY - r.top));
+    if (d < bestD) { bestD = d; hit = i; }
+  });
+  drag = { x: e.clientX, y: e.clientY, tx: view.tx, ty: view.ty, moved: false, handle: hit };
+});
+stage.addEventListener("pointermove", e => {
+  if (touches.has(e.pointerId)) touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (pinch && touches.size === 2) {
+    const p = pinchInfo();
+    const ns = Math.min(30, Math.max(0.03, pinch.s0 * p.d / pinch.d0));
+    const q = new DOMMatrix().rotate(view.rot).scale(ns).transformPoint(pinch.pt);
+    view.s = ns; view.tx = p.mx - q.x; view.ty = p.my - q.y; applyView();
+    return;
+  }
+  if (!drag) return;
+  const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
+  if (Math.abs(dx) + Math.abs(dy) > 3) drag.moved = true;
+  if (!drag.moved) return;
+  if (drag.handle >= 0) { corners[drag.handle] = toImage(e); drawOverlay(); }
+  else { stage.classList.add("panning"); view.tx = drag.tx + dx; view.ty = drag.ty + dy; applyView(); }
+});
+stage.addEventListener("pointerup", e => {
+  if (drag) {
+    if (drag.handle >= 0 && drag.moved) rememberQuad();
+    else if (!drag.moved && drag.handle < 0 && corners.length < 4) {
+      corners.push(toImage(e));
+      if (corners.length === 4) { corners = orderQuad(corners); rememberQuad(); }
+      drawOverlay(); setStep();
+    } else if (!drag.moved && drag.handle < 0 && corners.length === 4) {
+      // マス目の中の行をクリックしたら、その日をカレンダーで選ぶ
+      const [px, py] = toImage(e);
+      const rows = daysInMonth(state.year, state.month);
+      const hi = homography(orderQuad(corners), [[0, 0], [COLS, 0], [COLS, rows], [0, rows]]);
+      const [u, v] = applyH(hi, px, py);
+      if (u >= -0.3 && u <= COLS + 0.3 && v >= 0 && v < rows) select(key(state.year, state.month, Math.floor(v) + 1), false);
+    }
+  }
+  drag = null; stage.classList.remove("panning");
+  touches.delete(e.pointerId);
+  if (touches.size < 2) pinch = null;
+});
+stage.addEventListener("pointercancel", e => { touches.delete(e.pointerId); if (touches.size < 2) pinch = null; drag = null; stage.classList.remove("panning"); });
+window.addEventListener("resize", () => { if (img.naturalWidth) applyView(); });
+
+/* =========================================================
+   同期（GitHubの非公開Gistに保存）＋ カレンダー購読用の shift.ics
+   ========================================================= */
+const GIST_DESC = "ShiftCalendar 同期データ";
+const DATA_FILE = "shiftcalendar.json", FEED_FILE = "shift.ics";
+let syncing = false, syncAgain = false, syncTimer = null, lastRemote = "";
+
+function syncStatus(msg, cls = "") { const el = $("syncStatus"); el.className = "status " + cls; el.textContent = msg; }
+function feedUrl() { const s = state.sync; return s.gistId && s.login ? `https://gist.githubusercontent.com/${s.login}/${s.gistId}/raw/${FEED_FILE}` : ""; }
+function renderSync() {
+  const on = !!state.sync.token;
+  $("ghToken").value = state.sync.token || "";
+  $("syncStart").hidden = on; $("syncNowBtn").hidden = !on; $("syncStop").hidden = !on;
+  $("syncFeed").hidden = !feedUrl();
+  $("feedUrl").value = feedUrl();
+  if (!on) $("syncSettings").open = true;
+}
+function scheduleSync() {
+  if (!state.sync || !state.sync.token) return;
+  clearTimeout(syncTimer); syncTimer = setTimeout(syncNow, 1500);
+}
+async function gh(path, opt = {}) {
+  const res = await fetch("https://api.github.com" + path, {
+    ...opt, cache: "no-store",
+    headers: { "Authorization": `Bearer ${state.sync.token}`, "Accept": "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28", ...(opt.body ? { "Content-Type": "application/json" } : {}) },
+  });
+  if (!res.ok) { const e = new Error(`GitHub ${res.status}`); e.status = res.status; throw e; }
+  return res.json();
+}
+function payload() {
+  return { v: 1, shifts: state.shifts, tomb: state.tomb, settings: settingsOf(state), settingsU: state.settingsU || 0 };
+}
+function feedIcs() {
+  // 過ぎた日で実績があれば実績の時間、それ以外は予定の時間
+  const tKey = key(today.getFullYear(), today.getMonth() + 1, today.getDate());
+  const ent = Object.entries(state.shifts).sort(([a], [b]) => a.localeCompare(b))
+    .map(([k, s]) => [k, s.act && k < tKey ? { ...s.act } : s]);
+  return buildIcs(ent, { ...state, feed: true });
+}
+// 日ごとに新しい方を採用してまとめる
+function mergeRemote(r) {
+  if (!r || !r.shifts) return false;
+  let changed = false;
+  const keys = new Set([...Object.keys(state.shifts), ...Object.keys(state.tomb), ...Object.keys(r.shifts), ...Object.keys(r.tomb || {})]);
+  for (const k of keys) {
+    const cands = [
+      ["l", state.shifts[k], state.shifts[k] && state.shifts[k].u || 0],
+      ["lt", null, state.tomb[k] || 0],
+      ["r", r.shifts[k], r.shifts[k] && r.shifts[k].u || 0],
+      ["rt", null, (r.tomb || {})[k] || 0],
+    ].filter(c => c[1] || c[2]);
+    if (!cands.length) continue;
+    const best = cands.reduce((a, b) => (b[2] > a[2] ? b : a));
+    if (best[0] === "r") {
+      if (!state.shifts[k] || JSON.stringify(state.shifts[k]) !== JSON.stringify(best[1])) { state.shifts[k] = best[1]; changed = true; }
+      delete state.tomb[k];
+    } else if (best[0] === "rt") {
+      if (state.shifts[k]) { delete state.shifts[k]; changed = true; }
+      state.tomb[k] = best[2];
+    }
+  }
+  if ((r.settingsU || 0) > (state.settingsU || 0) && r.settings) {
+    SETTING_KEYS.forEach(k => { if (k in r.settings) state[k] = r.settings[k]; });
+    state.settingsU = r.settingsU; changed = true;
+  }
+  return changed;
+}
+async function findOrCreateGist() {
+  const list = await gh("/gists?per_page=100");
+  const g = list.find(x => x.description === GIST_DESC && x.files && x.files[DATA_FILE]);
+  if (g) { state.sync.gistId = g.id; state.sync.login = g.owner.login; return; }
+  const created = await gh("/gists", { method: "POST", body: JSON.stringify({
+    description: GIST_DESC, public: false,
+    files: { [DATA_FILE]: { content: JSON.stringify(payload()) }, [FEED_FILE]: { content: feedIcs() } },
+  }) });
+  state.sync.gistId = created.id; state.sync.login = created.owner.login;
+}
+async function syncNow() {
+  if (!state.sync.token) return;
+  if (syncing) { syncAgain = true; return; }
+  syncing = true;
+  syncStatus("同期中…", "busy");
+  try {
+    if (!state.sync.gistId) await findOrCreateGist();
+    let g;
+    try { g = await gh(`/gists/${state.sync.gistId}`); }
+    catch (e) { if (e.status === 404) { state.sync.gistId = null; await findOrCreateGist(); g = await gh(`/gists/${state.sync.gistId}`); } else throw e; }
+    const f = g.files[DATA_FILE];
+    let remoteText = f ? f.content : "";
+    if (f && f.truncated) remoteText = await (await fetch(f.raw_url, { cache: "no-store" })).text();
+    let remote = null; try { remote = remoteText ? JSON.parse(remoteText) : null; } catch (e) {}
+    const changed = mergeRemote(remote);
+    lastSnap = makeSnap(); persist();
+    if (changed) { render(); $("wage").value = state.wage || ""; $("fare").value = state.fare || ""; $("nightRate").checked = state.nightRate !== false; $("evTitle").value = state.title; $("evLoc").value = state.location; $("evAlarm").value = state.alarm; }
+    const body = JSON.stringify(payload()), ics = feedIcs();
+    const remoteIcs = g.files[FEED_FILE] ? g.files[FEED_FILE].content : "";
+    if (body !== remoteText || ics.replace(/^(DTSTAMP|LAST-MODIFIED|SEQUENCE):.*$/gm, "") !== remoteIcs.replace(/^(DTSTAMP|LAST-MODIFIED|SEQUENCE):.*$/gm, "")) {
+      await gh(`/gists/${state.sync.gistId}`, { method: "PATCH", body: JSON.stringify({ files: { [DATA_FILE]: { content: body }, [FEED_FILE]: { content: ics } } }) });
+    }
+    state.sync.lastAt = Date.now(); persist();
+    const t = new Date();
+    syncStatus(`同期済み（${pad(t.getHours())}:${pad(t.getMinutes())}）${changed ? "・ほかの端末の変更を取り込みました" : ""}`, "sync-ok");
+    renderSync();
+  } catch (e) {
+    console.error(e);
+    syncStatus(e.status === 401 ? "トークンが正しくないか、期限切れです。同期の設定でトークンを入れ直してください。"
+      : e.status === 403 || e.status === 404 ? "このトークンでは保存できません。トークン作成時に「gist」にチェックを入れたか確認してください。"
+      : "同期できませんでした（オフラインかもしれません）。つながったら自動でやり直します。", "err");
+  } finally {
+    syncing = false;
+    if (syncAgain) { syncAgain = false; syncNow(); }
+  }
+}
+$("syncStart").onclick = () => {
+  const t = $("ghToken").value.trim();
+  if (!t) { syncStatus("トークンを貼り付けてください。", "err"); return; }
+  state.sync = { token: t }; persist(); renderSync(); syncNow();
+};
+$("syncNowBtn").onclick = () => syncNow();
+$("syncStop").onclick = () => { state.sync = {}; persist(); renderSync(); syncStatus("この端末の同期をやめました（データはこの端末に残っています）。"); };
+$("copyFeed").onclick = async () => {
+  const el = $("feedUrl");
+  try { await navigator.clipboard.writeText(el.value); toast("URLをコピーしました"); }
+  catch (e) { el.select(); toast("URLを選択しました。コピーしてください"); }
+};
+document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") scheduleSync(); });
+window.addEventListener("online", () => scheduleSync());
+
+/* =========================================================
+   読み取り（ブラウザ内の文字認識 Tesseract.js・無料／回数無制限）
+   ========================================================= */
+let worker = null, backup = null, busy = false;
+function rdStatus(msg, cls = "") { const el = $("rdStatus"); el.className = "status " + cls; el.textContent = msg; }
+
+async function getWorker() {
+  if (worker) return worker;
+  rdStatus("文字認識の準備をしています（初回だけ数十秒かかります）…", "busy");
+  if (!window.Tesseract) await loadScript(TESS_URL);
+  worker = await Tesseract.createWorker("eng", 1);
+  await worker.setParameters({ tessedit_char_whitelist: "0123456789.", tessedit_pageseg_mode: "7" });
+  return worker;
+}
+function cellCanvas(cell) {
+  const P = 12, c = document.createElement("canvas");
+  c.width = cell.w + P * 2; c.height = cell.h + P * 2;
+  const ctx = c.getContext("2d"), id = ctx.createImageData(c.width, c.height);
+  id.data.fill(255);
+  for (let y = 0; y < cell.h; y++) for (let x = 0; x < cell.w; x++) if (cell.bin[y * cell.w + x]) {
+    const k = ((y + P) * c.width + x + P) * 4; id.data[k] = id.data[k + 1] = id.data[k + 2] = 0;
+  }
+  ctx.putImageData(id, 0, 0);
+  return c;
+}
+// 四隅で囲んだ部分（と少しの余白）だけの画素を取り出す
+function sourcePixels(q) {
+  const xs = q.map(p => p[0]), ys = q.map(p => p[1]);
+  const mx = (Math.max(...xs) - Math.min(...xs)) * 0.1, my = (Math.max(...ys) - Math.min(...ys)) * 0.05;
+  const ox = Math.max(0, Math.floor(Math.min(...xs) - mx)), oy = Math.max(0, Math.floor(Math.min(...ys) - my));
+  const w = Math.min(img.naturalWidth, Math.ceil(Math.max(...xs) + mx)) - ox;
+  const h = Math.min(img.naturalHeight, Math.ceil(Math.max(...ys) + my)) - oy;
+  const c = document.createElement("canvas"); c.width = w; c.height = h;
+  const ctx = c.getContext("2d");
+  ctx.drawImage(img, ox, oy, w, h, 0, 0, w, h);
+  return { data: ctx.getImageData(0, 0, w, h).data, width: w, height: h, ox, oy };
+}
+const pause = () => new Promise(r => setTimeout(r, 0));
+
+async function runRead() {
+  if (busy || corners.length < 4) return;
+  busy = true; $("rdRun").disabled = true; $("rdResult").hidden = true;
+  try {
+    const w = await getWorker();
+    const { year: y, month: m } = state;
+    const rows = daysInMonth(y, m);
+    const q = orderQuad(corners);
+    rdStatus("写真をまっすぐに補正しています…", "busy"); await pause();
+    const grid = prepareGrid(sourcePixels(q), q, rows, COLS);
+    const strs = [];
+    for (let i = 0; i < rows; i++) {
+      rdStatus(`読み取り中… ${i + 1} / ${rows} 日`, "busy");
+      const cells = extractRow(grid, i);
+      const row = [];
+      for (const cell of cells) {
+        if (!cell) { row.push(""); continue; }
+        const a = (await w.recognize(cellCanvas(cell))).data.text.trim();
+        const b = (await w.recognize(cellCanvas(thicken(cell)))).data.text.trim();
+        row.push([a, b]);
+      }
+      strs.push(row);
+    }
+    const fav = state.presets.map(p => `${minutes(p.start) / 60}-${minutes(p.end) / 60}`);
+    const res = decodeAll(strs, fav);
+
+    // 反映（読み取り前の状態を保存しておく）
+    backup = JSON.parse(JSON.stringify(state.shifts));
+    const prefix = `${y}-${pad(m)}-`;
+    const keepAct = {};
+    for (const k of Object.keys(state.shifts)) if (k.startsWith(prefix)) { if (state.shifts[k].act) keepAct[k] = state.shifts[k]; delete state.shifts[k]; }
+    const checks = [];
+    let sum = 0, n = 0;
+    const show = x => Array.isArray(x) ? (x[0] || x[1] || "") : x;
+    res.forEach((r, i) => {
+      if (!r) return;
+      const k = key(y, m, i + 1);
+      const raw = `出 ${show(strs[i][0]) || "−"} / 退 ${show(strs[i][1]) || "−"} / 休 ${show(strs[i][2]) || "−"} / 実 ${show(strs[i][3]) || "−"}`;
+      if (r.unsure) { checks.push({ k, label: `${m}/${i + 1}` }); return; }
+      const warn = r.cost > 1;
+      state.shifts[k] = { start: decToHHMM(r.start), end: decToHHMM(r.end), brk: Math.round(r.brk * 60), read: true, warn, raw };
+      sum += r.act; n++;
+      if (warn) checks.push({ k, label: `${m}/${i + 1}` });
+    });
+    // 実績を入れていた日は実績を残す（予定が読み取れなかった日は元の予定ごと残す）
+    for (const [k, old] of Object.entries(keepAct)) {
+      if (state.shifts[k]) state.shifts[k].act = old.act; else state.shifts[k] = old;
+    }
+    save();
+    $("rdUndo").hidden = false;
+    $("rdSum").textContent = sum.toFixed(2);
+    const box = $("rdChecks"); box.innerHTML = "";
+    checks.forEach(c => {
+      const b = document.createElement("button"); b.type = "button"; b.textContent = `${c.label} 要確認`;
+      b.onclick = () => { select(c.k, false, true); $("edStart").focus(); };
+      box.appendChild(b);
+    });
+    $("rdResult").hidden = false;
+    rdStatus(`${n}日分を読み取りました。` + (checks.length ? `自信がない日が${checks.length}日あります（オレンジ色）。` : "すべて自信ありです。"));
+    select(key(y, m, 1), false);
+  } catch (err) {
+    console.error(err);
+    rdStatus("読み取りに失敗しました。初回はインターネット接続が必要です。接続を確認してもう一度押してください。", "err");
+  } finally {
+    busy = false; $("rdRun").disabled = corners.length < 4;
+  }
+}
+$("rdRun").onclick = runRead;
+$("rdUndo").onclick = () => {
+  if (!backup) return;
+  state.shifts = backup; backup = null; save(); render();
+  $("rdUndo").hidden = true; $("rdResult").hidden = true;
+  rdStatus("読み取り前の状態に戻しました。");
+};
+
+/* =========================================================
+   起動
+   ========================================================= */
+load();
+$("evTitle").value = state.title;
+$("evLoc").value = state.location;
+$("evAlarm").value = state.alarm;
+$("wage").value = state.wage || "";
+$("fare").value = state.fare || "";
+$("nightRate").checked = state.nightRate !== false;
+render();
+setStep();
+renderSync();
+if (state.sync.token) syncNow();
+</script>
+</body>
+</html>
