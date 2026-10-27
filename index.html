@@ -111,9 +111,16 @@ header h1 .plus { color: var(--accent); margin-left: 1px; }
 .modesw button.on { background: var(--accent); color: #fff; font-weight: 700; }
 body.lite .plus-only, body:not(.lite) .lite-only { display: none !important; }
 
-main.app { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) 440px; }
+main.app { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) var(--pw, 440px); position: relative; }
+.splitter { position: absolute; top: 0; bottom: 0; right: var(--pw, 440px); width: 12px; transform: translateX(50%); cursor: col-resize; z-index: 5; touch-action: none; }
+.splitter::before { content: ""; position: absolute; left: 50%; top: 0; bottom: 0; width: 2px; transform: translateX(-50%); background: transparent; transition: background .15s; }
+.splitter::after { content: ""; position: absolute; left: 50%; top: 50%; width: 6px; height: 40px; transform: translate(-50%, -50%); border-radius: 3px; background: var(--line); border: 1px solid var(--muted); opacity: .8; }
+.splitter:hover::before, .splitter.drag::before { background: var(--accent); }
+.splitter:hover::after, .splitter.drag::after { background: var(--accent); border-color: var(--accent); opacity: 1; }
+body.resizing { cursor: col-resize; user-select: none; }
 @media (max-width: 900px) {
   main.app { grid-template-columns: minmax(0, 1fr); grid-template-rows: 60vh auto; }
+  .splitter { display: none; }
   .panel { min-width: 0; }
   body { height: auto; }
 }
@@ -190,6 +197,7 @@ main.app { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(
 .steps { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 4px; }
 a.btnlink { display: inline-flex; align-items: center; border: 1px solid var(--line); border-radius: 6px; padding: 6px 10px; color: var(--ink); text-decoration: none; background: var(--surface); }
 a.btnlink:hover { border-color: var(--accent); }
+.est { color: var(--muted); font-weight: 400; }
 .hint { background: var(--accent-soft); border-radius: 8px; padding: 8px 10px; margin: 0; }
 details.extra > summary { padding: 2px 0; }
 details.extra[open] > summary { margin-bottom: 8px; }
@@ -382,6 +390,7 @@ details summary { cursor: pointer; font-weight: 500; }
     <div class="stepbar"><span class="badge" id="stepBadge">1</span><span id="stepText">シフト表の写真を開いてください。</span></div>
   </section>
 
+  <div class="splitter" id="splitter" role="separator" aria-orientation="vertical" aria-label="写真と右側の幅を変える" title="ドラッグで写真の大きさを変える（ダブルクリックで元に戻す）"></div>
   <!-- ===== 右側パネル ===== -->
   <section class="panel">
     <nav class="jump" id="jump" aria-label="欄へ移動"></nav>
@@ -403,6 +412,7 @@ details summary { cursor: pointer; font-weight: 500; }
         <summary>画面の使い方・困ったとき</summary>
         <ul class="small">
           <li>欄の見出しを押すとたためる。上の目次で欄に移動できる</li>
+          <li>パソコンでは、写真と右側の境目をドラッグすると写真の大きさを変えられる（ダブルクリックで元に戻る）</li>
           <li>「⇅ 並べ替え」で、名前を押したまま動かすと欄の順番を変えられる</li>
           <li>ホーム画面に追加して使うのがおすすめ（データが消えにくくなる）</li>
           <li>新しい版にならないときは、アプリを閉じて開き直す</li>
@@ -1568,7 +1578,7 @@ function renderSum() {
   $("sumYear").textContent = `${sumYear}年`;
   $("sumNote").innerHTML = (by === "pay"
     ? "給料日ごとに数えています（給料日は「バイト先の登録」で設定）。上限は、扶養の条件に合わせて入れてください。"
-    : "✓は給与明細の額。行を押すとその月へ移動します。") + "<br>※扶養・税金の年収は、給料が支払われた日で数えます。";
+    : "✓は給与明細の額。「未確定」は見込みの額で、給料の欄で明細の額を入れると確定します。行を押すとその月へ移動します。") + "<br>※扶養・税金の年収は、給料が支払われた日で数えます。";
   const t = $("sumList");
   // 働いた月をすべて集めて、表示する年に入るものを月ごとにまとめる
   const work = new Set();
@@ -1620,13 +1630,13 @@ function renderSum() {
     ? `<tr class="small"><td>支払い月</td><td class="r">何月分</td><td class="r">金額</td><td class="r">累計</td></tr>`
     : `<tr class="small"><td>月</td><td class="r">回数</td><td class="r">時間</td><td class="r">金額</td></tr>`;
   let cum = 0;
-  let tN = 0, tMin = 0, tAmt = 0;
+  let tN = 0, tMin = 0, tAmt = 0, tEst = 0;
   for (const m of [...buckets.keys()].sort((a, b) => a - b)) {
     const items = buckets.get(m);
     let amt = 0, calc = 0, paidN = 0, n = 0, min = 0;
     const parts = [];
     for (const it of items) {
-      amt += it.amt; calc += it.j.mix; n += it.j.days; min += it.j.min; if (it.paid) paidN++; else if (it.part) paidN += 0.5;
+      amt += it.amt; calc += it.j.mix; n += it.j.days; min += it.j.min; if (it.paid) paidN++; else { if (it.part) paidN += 0.5; tEst += it.amt; }
       parts.push(`${dot(it.j.job.id)}${esc(it.j.job.name)}${by === "pay" ? ` ${it.wlabel}（${+it.pdk.slice(5, 7)}/${+it.pdk.slice(8)}払い）` : ""} ${yen(it.amt)}${it.paid ? '<span class="sync-ok">✓</span>' : ""}`);
       const e = byJob.get(it.j.job.id) || { id: it.j.job.id, name: it.j.job.name, n: 0, min: 0, amt: 0, day: it.j.job.id !== "main" };
       e.n += it.j.days; e.min += it.j.min; e.amt += it.amt; byJob.set(it.j.job.id, e);
@@ -1637,7 +1647,7 @@ function renderSum() {
     const tr = document.createElement("tr");
     const wms = [...new Set(items.map(it => it.wm))].sort((a, b) => a - b);
     const col2 = by === "pay" ? (wms.length > 1 ? `${wms[0]}〜${wms[wms.length - 1]}月分` : `${wms[0]}月分`) : n;
-    const amtCell = `<td class="r num">${yen(amt)}${full ? ' <span class="sync-ok">✓</span>' : paidN ? ' <span class="small">一部✓</span>' : ""}` +
+    const amtCell = `<td class="r num">${yen(amt)}${full ? ' <span class="sync-ok">✓</span>' : `<br><span class="small est">${paidN ? "一部未確定" : "未確定"}</span>`}` +
       `${full && Math.abs(amt - calc) >= 1 ? `<br><span class="small">${diffText(amt - calc)}</span>` : ""}</td>`;
     cum += amt;
     const cumCls = limit && cum > limit ? "cum-over" : limit && cum >= limit * 0.9 ? "cum-near" : "";
@@ -1657,9 +1667,10 @@ function renderSum() {
     }
   }
   const foot = document.createElement("tr");
+  const estLine = tEst >= 1 ? `<br><span class="small est">うち未確定 ${yen(tEst)}</span>` : "";
   foot.innerHTML = by === "pay"
-    ? `<td><b>合計</b></td><td></td><td class="r num"><b>${yen(tAmt)}</b></td><td></td>`
-    : `<td><b>合計</b></td><td class="r num"><b>${tN}</b></td><td class="r num"><b>${fmtHours(tMin)}h</b></td><td class="r num"><b>${yen(tAmt)}</b></td>`;
+    ? `<td><b>合計</b></td><td></td><td class="r num"><b>${yen(tAmt)}</b>${estLine}</td><td></td>`
+    : `<td><b>合計</b></td><td class="r num"><b>${tN}</b></td><td class="r num"><b>${fmtHours(tMin)}h</b></td><td class="r num"><b>${yen(tAmt)}</b>${estLine}</td>`;
   t.appendChild(foot);
   // 上限までのバー
   $("limitBox").hidden = !(by === "pay" && limit);
@@ -1670,6 +1681,7 @@ function renderSum() {
     $("limitText").innerHTML = tAmt > limit
       ? `<b class="diff-minus">上限を ${yen(tAmt - limit)} 超えそうです</b>（${yen(tAmt)} ／ 上限 ${yen(limit)}）`
       : `上限まで あと <b>${yen(limit - Math.floor(tAmt))}</b>（${yen(tAmt)} ／ ${yen(limit)}、${Math.round(pct)}%）`;
+    if (tEst >= 1) $("limitText").innerHTML += `<br>※未確定（見込み）の ${yen(tEst)} を含みます。明細の額を入れると確定します。`;
   }
   if (by === "pay" && limit) setHsum("sumCard", tAmt > limit ? `上限超え ${yen(tAmt - limit)}` : `上限まで ${yen(limit - Math.floor(tAmt))}`, tAmt > limit ? "warn" : "");
   else setHsum("sumCard", `${sumYear}年 ${yen(tAmt)}`);
@@ -2038,6 +2050,32 @@ function setMode(m) {
 }
 document.querySelectorAll(".modesw button").forEach(b => b.addEventListener("click", () => setMode(b.dataset.mode)));
 applyMode();
+// パソコン：写真と右側の境目をドラッグして、写真の大きさを変える
+function setPanelW(w, keep = true) {
+  const app = document.querySelector("main.app");
+  const max = Math.max(360, app.clientWidth - 320);
+  w = Math.round(Math.min(max, Math.max(360, w)));
+  app.style.setProperty("--pw", w + "px");
+  if (keep) { ui.panelW = w; saveUi(); }
+}
+(function () {
+  const sp = $("splitter"), app = document.querySelector("main.app");
+  if (ui.panelW) setPanelW(ui.panelW, false);
+  let raf = 0;
+  const redraw = () => { cancelAnimationFrame(raf); raf = requestAnimationFrame(() => { const im = $("img"); if (im && im.naturalWidth) applyView(); }); };
+  sp.addEventListener("pointerdown", e => {
+    e.preventDefault(); sp.setPointerCapture(e.pointerId);
+    sp.classList.add("drag"); document.body.classList.add("resizing");
+    const move = ev => { setPanelW(app.getBoundingClientRect().right - ev.clientX, false); redraw(); };
+    const up = () => {
+      sp.classList.remove("drag"); document.body.classList.remove("resizing");
+      sp.removeEventListener("pointermove", move); sp.removeEventListener("pointerup", up); sp.removeEventListener("pointercancel", up);
+      setPanelW(parseInt(getComputedStyle(app).getPropertyValue("--pw")) || 440);
+    };
+    sp.addEventListener("pointermove", move); sp.addEventListener("pointerup", up); sp.addEventListener("pointercancel", up);
+  });
+  sp.addEventListener("dblclick", () => { app.style.removeProperty("--pw"); delete ui.panelW; saveUi(); redraw(); });
+})();
 function saveUi() { try { localStorage.setItem(UI_KEY, JSON.stringify(ui)); } catch (e) {} }
 function setHsum(id, text, cls = "") {
   const el = document.querySelector(`#${id} .hsum`); if (!el) return;
